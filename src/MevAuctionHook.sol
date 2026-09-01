@@ -63,7 +63,7 @@ contract MevAuctionHook is BaseHook, IUnlockCallback {
     error NotRequester();
     error BidsAlreadySubmitted();
 
-    // ─── Constructor ──────────────────────────────────────────────────────────
+    // Constructor
 
     constructor(IPoolManager _poolManager, uint256 _smallSwapThreshold, uint256 _auctionWindowBlocks)
         BaseHook(_poolManager)
@@ -74,7 +74,7 @@ contract MevAuctionHook is BaseHook, IUnlockCallback {
 
     receive() external payable {}
 
-    // ─── Public auction functions ──────────────────────────────────────────────
+    //Public auction functions
 
     function requestSwap(PoolKey calldata key, SwapParams calldata params)
         external
