@@ -36,7 +36,7 @@ contract SubmitBidScript is BaseScript {
         MevAuctionHook.RequestInfo memory info = hook.getRequestInfo(requestId);
 
         require(!info.isCompleted, "Request already completed");
-        require(info.auctionOpen,  "Auction window has closed — run 08_ExecuteSwap");
+        require(info.auctionOpen,  "Auction window has closed - run 08_ExecuteSwap");
 
         // Approve the bid currency (input currency for this swap direction)
         bool isZeroForOne = info.zeroForOne;

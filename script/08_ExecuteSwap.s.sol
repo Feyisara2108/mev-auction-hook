@@ -31,7 +31,7 @@ contract ExecuteSwapScript is BaseScript {
         MevAuctionHook.RequestInfo memory info = hook.getRequestInfo(requestId);
 
         require(!info.isCompleted, "Request already completed");
-        require(!info.auctionOpen, "Auction window still open — wait for more blocks");
+        require(!info.auctionOpen, "Auction window still open - wait for more blocks");
 
         vm.startBroadcast();
         hook.executeSwap(requestId);
