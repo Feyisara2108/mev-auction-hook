@@ -28,13 +28,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <main className="flex-1">{children}</main>
           <footer className="border-t border-(--color-border) py-4 px-4 mt-8">
             <div className="mx-auto max-w-5xl flex flex-wrap items-center justify-between gap-2 text-xs text-(--color-muted)">
-              <span>© 2024 MEV Shield. All rights reserved.</span>
+              <span>© 2026 MEV Shield. All rights reserved.</span>
               <nav className="flex items-center gap-4">
                 <a href="#" className="hover:text-(--color-subtext) transition-colors">Privacy Policy</a>
                 <a href="#" className="hover:text-(--color-subtext) transition-colors">Terms of Service</a>
                 <a href="#" className="hover:text-(--color-subtext) transition-colors">Docs</a>
                 <a
-                  href="https://github.com/Feyisara2108/mevauctionhook"
+                  href="https://github.com/Feyisara2108/mev-auction-hook"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-(--color-subtext) transition-colors"
