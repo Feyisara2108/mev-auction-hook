@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { WalletButton } from "./WalletButton";
 
 const links = [
@@ -9,6 +10,51 @@ const links = [
   { href: "/auctions", label: "Auctions" },
   { href: "/activity", label: "Activity" },
 ];
+
+function ThemeToggle() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const saved = localStorage.getItem("mev-theme");
+    const preferred = window.matchMedia("(prefers-color-scheme: light)").matches
+      ? "light"
+      : "dark";
+    setTheme((saved as "dark" | "light") || preferred);
+  }, []);
+
+  function toggle() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("mev-theme", next);
+  }
+
+  return (
+    <button
+      onClick={toggle}
+      title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+      className="flex items-center justify-center w-7 h-7 rounded-sm border transition-colors"
+      style={{
+        borderColor: "var(--color-border)",
+        backgroundColor: "var(--color-surface-alt)",
+        color: "var(--color-subtext)",
+      }}
+    >
+      {theme === "dark" ? (
+        /* Sun icon */
+        <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <circle cx="8" cy="8" r="3" />
+          <path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3.05 3.05l1.06 1.06M11.89 11.89l1.06 1.06M12.95 3.05l-1.06 1.06M4.11 11.89l-1.06 1.06" />
+        </svg>
+      ) : (
+        /* Moon icon */
+        <svg viewBox="0 0 16 16" fill="none" className="w-3.5 h-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M13.5 9A6 6 0 0 1 7 2.5a6 6 0 1 0 6.5 6.5z" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 export function Nav() {
   const pathname = usePathname();
@@ -25,7 +71,7 @@ export function Nav() {
         {/* Wordmark */}
         <Link
           href="/"
-          className="shrink-0 mr-6 text-xs font-semibold tracking-widest uppercase"
+          className="shrink-0 mr-4 sm:mr-6 text-xs font-semibold tracking-widest uppercase"
           style={{ color: "var(--color-subtext)" }}
         >
           MEV Shield
@@ -39,7 +85,7 @@ export function Nav() {
               <Link
                 key={href}
                 href={href}
-                className="relative flex items-center px-3 h-full text-xs font-medium transition-colors"
+                className="relative flex items-center px-2 sm:px-3 h-full text-xs font-medium transition-colors"
                 style={{
                   color: active ? "var(--color-text)" : "var(--color-subtext)",
                 }}
@@ -66,8 +112,9 @@ export function Nav() {
           })}
         </nav>
 
-        {/* Right: wallet pills */}
-        <div className="ml-auto">
+        {/* Right: theme toggle + wallet */}
+        <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           <WalletButton />
         </div>
       </div>

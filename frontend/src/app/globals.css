@@ -2,29 +2,29 @@
 
 @theme inline {
   /* ─── Background / surface ─────────────────────────── */
-  --color-bg:          #0b0c0f;   /* near-black, not pure */
-  --color-surface:     #0f1014;   /* card bg */
-  --color-surface-alt: #13151a;   /* input bg / secondary row */
+  --color-bg:          #0b0c0f;
+  --color-surface:     #0f1014;
+  --color-surface-alt: #13151a;
 
-  /* ─── Borders — hairline only ───────────────────────── */
-  --color-border:      #1e2028;   /* default card/input border */
-  --color-border-hi:   #2a2d38;   /* hover / active border */
+  /* ─── Borders ───────────────────────────────────────── */
+  --color-border:      #1e2028;
+  --color-border-hi:   #2a2d38;
 
-  /* ─── Primary accent (violet) — used sparingly ─────── */
+  /* ─── Primary accent (violet) ───────────────────────── */
   --color-primary:       #6366f1;
   --color-primary-hover: #4f52d1;
 
-  /* ─── Semantic status colors (text color only) ──────── */
-  --color-success: #22c55e;   /* Open / Express Lane / Winning */
-  --color-amber:   #f59e0b;   /* Full Auction / highest bid */
-  --color-error:   #ef4444;   /* Wrong Network / Cancelled */
-  --color-info:    #06b6d4;   /* secondary accent */
+  /* ─── Semantic status colors ────────────────────────── */
+  --color-success: #22c55e;
+  --color-amber:   #f59e0b;
+  --color-error:   #ef4444;
+  --color-info:    #06b6d4;
 
   /* ─── Text hierarchy ────────────────────────────────── */
-  --color-text:    #d1d5db;   /* primary readable text */
-  --color-subtext: #6b7280;   /* secondary / labels */
-  --color-muted:   #374151;   /* ghost / disabled */
-  --color-eyebrow: #4b5563;   /* uppercase eyebrow labels */
+  --color-text:    #d1d5db;
+  --color-subtext: #6b7280;
+  --color-muted:   #374151;
+  --color-eyebrow: #4b5563;
 
   /* ─── Ticker bar ────────────────────────────────────── */
   --color-ticker:        #0b0c0f;
@@ -33,6 +33,28 @@
   /* ─── Fonts ─────────────────────────────────────────── */
   --font-sans: var(--font-inter);
   --font-mono: var(--font-jetbrains);
+}
+
+/* ─── Light theme overrides ─────────────────────────────
+   Applied when <html data-theme="light"> is set.
+   ─────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --color-bg:          #f8fafc;
+  --color-surface:     #ffffff;
+  --color-surface-alt: #f1f5f9;
+  --color-border:      #e2e8f0;
+  --color-border-hi:   #cbd5e1;
+  --color-text:        #0f172a;
+  --color-subtext:     #475569;
+  --color-muted:       #94a3b8;
+  --color-eyebrow:     #64748b;
+  --color-ticker:        #f1f5f9;
+  --color-ticker-border: #e2e8f0;
+  --color-success: #16a34a;
+  --color-amber:   #d97706;
+  --color-error:   #dc2626;
+  --color-info:    #0891b2;
+  color-scheme: light;
 }
 
 :root { color-scheme: dark; }
@@ -44,11 +66,10 @@ body {
   color: var(--color-text);
   font-family: var(--font-sans), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 
-/* ─── Eyebrow label utility ─────────────────────────────
-   Usage: <p class="eyebrow">HIGHEST BID</p>
-   ─────────────────────────────────────────────────────── */
+/* ─── Eyebrow label utility ───────────────────────────── */
 .eyebrow {
   font-family: var(--font-sans), system-ui, sans-serif;
   font-size: 0.65rem;
@@ -60,15 +81,13 @@ body {
   margin-bottom: 0.25rem;
 }
 
-/* ─── Mono data value utility ───────────────────────────
-   Usage: <span class="mono-val">0.12</span>
-   ─────────────────────────────────────────────────────── */
+/* ─── Mono data value utility ─────────────────────────── */
 .mono-val {
   font-family: var(--font-mono), 'Courier New', monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/* ─── Scrollbar ─────────────────────────────────────────*/
+/* ─── Scrollbar ───────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: var(--color-surface); }
 ::-webkit-scrollbar-thumb { background: var(--color-border-hi); }
