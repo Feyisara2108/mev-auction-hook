@@ -20,3 +20,7 @@ node_modules/
 
 # Forge dependency libs (cloned locally; restored with forge install)
 lib/
+
+# Un-ignore frontend source lib (ABI, constants, wagmi config)
+!frontend/src/lib/
+!frontend/src/lib/**

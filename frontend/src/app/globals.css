@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* ─── Background / surface ─────────────────────────── */
+  --color-bg:          #0b0c0f;   /* near-black, not pure */
+  --color-surface:     #0f1014;   /* card bg */
+  --color-surface-alt: #13151a;   /* input bg / secondary row */
+
+  /* ─── Borders — hairline only ───────────────────────── */
+  --color-border:      #1e2028;   /* default card/input border */
+  --color-border-hi:   #2a2d38;   /* hover / active border */
+
+  /* ─── Primary accent (violet) — used sparingly ─────── */
+  --color-primary:       #6366f1;
+  --color-primary-hover: #4f52d1;
+
+  /* ─── Semantic status colors (text color only) ──────── */
+  --color-success: #22c55e;   /* Open / Express Lane / Winning */
+  --color-amber:   #f59e0b;   /* Full Auction / highest bid */
+  --color-error:   #ef4444;   /* Wrong Network / Cancelled */
+  --color-info:    #06b6d4;   /* secondary accent */
+
+  /* ─── Text hierarchy ────────────────────────────────── */
+  --color-text:    #d1d5db;   /* primary readable text */
+  --color-subtext: #6b7280;   /* secondary / labels */
+  --color-muted:   #374151;   /* ghost / disabled */
+  --color-eyebrow: #4b5563;   /* uppercase eyebrow labels */
+
+  /* ─── Ticker bar ────────────────────────────────────── */
+  --color-ticker:        #0b0c0f;
+  --color-ticker-border: #1e2028;
+
+  /* ─── Fonts ─────────────────────────────────────────── */
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains);
+}
+
+:root { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Eyebrow label utility ─────────────────────────────
+   Usage: <p class="eyebrow">HIGHEST BID</p>
+   ─────────────────────────────────────────────────────── */
+.eyebrow {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-eyebrow);
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+/* ─── Mono data value utility ───────────────────────────
+   Usage: <span class="mono-val">0.12</span>
+   ─────────────────────────────────────────────────────── */
+.mono-val {
+  font-family: var(--font-mono), 'Courier New', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────*/
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--color-surface); }
+::-webkit-scrollbar-thumb { background: var(--color-border-hi); }
