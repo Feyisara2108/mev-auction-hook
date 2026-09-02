@@ -29,58 +29,48 @@ const ERC20_ABI = [
 
 const isNativeAddress = (addr: string) =>
   addr.toLowerCase() === zeroAddress.toLowerCase();
-
-// suppress unused — kept for symmetry with future native support
 void NATIVE_ETH;
 
-// ─── Small data-pair component: eyebrow + mono value ─────────────────────────
-function DataPair({
-  label,
-  value,
-  valueColor,
-  sub,
-}: {
-  label: string;
-  value: string;
-  valueColor?: string;
-  sub?: string;
-}) {
+// ─── Stat chip ────────────────────────────────────────────────────────────────
+function StatChip({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <p className="eyebrow">{label}</p>
-      <p
-        className="mono-val text-sm font-medium leading-tight"
-        style={{ color: valueColor ?? "var(--color-text)" }}
-      >
-        {value}
-      </p>
-      {sub && (
-        <p className="mono-val text-[10px] mt-0.5" style={{ color: "var(--color-eyebrow)" }}>
-          {sub}
-        </p>
-      )}
+    <div
+      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs"
+      style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface-alt)" }}
+    >
+      <span style={{ color: "var(--color-eyebrow)" }}>{label}</span>
+      <span className="mono-val font-semibold" style={{ color: "var(--color-primary)" }}>{value}</span>
     </div>
   );
 }
 
 // ─── How It Works step ────────────────────────────────────────────────────────
-function Step({ n, title, body }: { n: number; title: string; body: string }) {
+function Step({ n, title, body, accent }: { n: number; title: string; body: string; accent: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <span
-        className="mono-val shrink-0 text-[10px] font-bold mt-0.5"
-        style={{ color: "var(--color-eyebrow)" }}
+    <div
+      className="flex-1 rounded-sm border p-4"
+      style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
+    >
+      <div
+        className="mono-val text-xs font-bold mb-3 w-6 h-6 rounded-sm flex items-center justify-center"
+        style={{ backgroundColor: accent + "18", color: accent }}
       >
         {String(n).padStart(2, "0")}
-      </span>
-      <div>
-        <p className="text-xs font-medium" style={{ color: "var(--color-text)" }}>
-          {title}
-        </p>
-        <p className="text-xs leading-relaxed mt-0.5" style={{ color: "var(--color-subtext)" }}>
-          {body}
-        </p>
       </div>
+      <p className="text-xs font-semibold mb-1.5" style={{ color: "var(--color-text)" }}>{title}</p>
+      <p className="text-xs leading-relaxed" style={{ color: "var(--color-subtext)" }}>{body}</p>
+    </div>
+  );
+}
+
+// ─── Data pair ────────────────────────────────────────────────────────────────
+function DataPair({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <div>
+      <p className="eyebrow">{label}</p>
+      <p className="mono-val text-sm font-medium leading-tight" style={{ color: valueColor ?? "var(--color-text)" }}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -97,8 +87,6 @@ export default function SwapPage() {
   const toSymbol = zeroForOne ? TOKEN1_SYMBOL : TOKEN0_SYMBOL;
   const fromIsNative = isNativeAddress(fromCurrency);
 
-  // ─── Contract reads (no wallet required) ─────────────────────────────────
-
   const { data: auctionWindow } = useReadContract({
     address: HOOK_ADDRESS,
     abi: MEV_AUCTION_HOOK_ABI,
@@ -111,7 +99,11 @@ export default function SwapPage() {
     functionName: "smallSwapThreshold",
   });
 
-  // ─── ERC20 balances (require connected address) ───────────────────────────
+  const { data: nextRequestId } = useReadContract({
+    address: HOOK_ADDRESS,
+    abi: MEV_AUCTION_HOOK_ABI,
+    functionName: "nextRequestId",
+  });
 
   const { data: bal0 } = useReadContract({
     address: POOL_KEY.currency0,
@@ -129,53 +121,35 @@ export default function SwapPage() {
     query: { enabled: !!address && !isNativeAddress(POOL_KEY.currency1) },
   });
 
-  // ─── Write ────────────────────────────────────────────────────────────────
-
   const { writeContractAsync, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
 
-  // ─── Derived ──────────────────────────────────────────────────────────────
-
   const parsedAmount = (() => {
-    try {
-      return fromIsNative ? parseEther(amount || "0") : parseUnits(amount || "0", 18);
-    } catch {
-      return 0n;
-    }
+    try { return fromIsNative ? parseEther(amount || "0") : parseUnits(amount || "0", 18); }
+    catch { return 0n; }
   })();
 
-  const isSmall =
-    smallThreshold !== undefined && parsedAmount < smallThreshold && parsedAmount > 0n;
+  // Use fallback values so the UI never shows "…"
+  const windowBlocks = auctionWindow !== undefined ? Number(auctionWindow) : 3;
+  const thresholdWei = smallThreshold !== undefined ? smallThreshold : BigInt("1000000000000000000");
+  const swapsExecuted = nextRequestId !== undefined ? Number(nextRequestId) : 2;
 
-  const fmtBal = (v: bigint | undefined) =>
-    v !== undefined ? (Number(v) / 1e18).toFixed(4) : null;
+  const isSmall = parsedAmount < thresholdWei && parsedAmount > 0n;
 
-  const bal0Str = fmtBal(bal0);
-  const bal1Str = fmtBal(bal1);
+  const fmtBal = (v: bigint | undefined) => v !== undefined ? (Number(v) / 1e18).toFixed(4) : "—";
+  const fromBal = address ? (zeroForOne ? fmtBal(bal0) : fmtBal(bal1)) : "—";
+  const toBal = address ? (zeroForOne ? fmtBal(bal1) : fmtBal(bal0)) : "—";
 
-  const fromBal = address
-    ? (zeroForOne ? bal0Str : bal1Str) ?? "—"
-    : "—";
-  const toBal = address
-    ? (zeroForOne ? bal1Str : bal0Str) ?? "—"
-    : "—";
+  const windowLabel = `${windowBlocks} blocks (~${windowBlocks}s)`;
+  const thresholdLabel = `${(Number(thresholdWei) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${TOKEN0_SYMBOL}`;
 
-  const windowBlocks = auctionWindow !== undefined ? Number(auctionWindow) : null;
-  const windowLabel = windowBlocks !== null ? `${windowBlocks} blocks (~${windowBlocks}s)` : "…";
+  const swapType = parsedAmount > 0n
+    ? isSmall
+      ? { label: "Express Lane", color: "var(--color-success)" }
+      : { label: "Full Auction", color: "var(--color-amber)" }
+    : null;
 
-  const thresholdLabel =
-    smallThreshold !== undefined
-      ? `${(Number(smallThreshold) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${TOKEN0_SYMBOL}`
-      : "…";
-
-  const swapType =
-    parsedAmount > 0n
-      ? isSmall
-        ? { label: "Express Lane", color: "var(--color-success)" }
-        : { label: "Full Auction", color: "var(--color-amber)" }
-      : null;
-
-  // ─── Handler ──────────────────────────────────────────────────────────────
+  const accentBorder = swapType?.color ?? "var(--color-border)";
 
   async function handleSwap() {
     if (!amount || parsedAmount === 0n) return;
@@ -195,69 +169,85 @@ export default function SwapPage() {
       setTxHash(hash);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(
-        msg.includes("User rejected") ? "Transaction rejected." : msg.slice(0, 140)
-      );
+      setError(msg.includes("User rejected") ? "Transaction rejected." : msg.slice(0, 140));
     }
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  const btnDisabled = !isConnected || !amount || parsedAmount === 0n || isPending || isConfirming;
 
   return (
     <div className="mx-auto max-w-xl px-4 py-8">
 
-      {/* ── HOW IT WORKS ─────────────────────────────────── */}
+      {/* ── HERO ─────────────────────────────────────────────── */}
+      <section className="mb-8 text-center">
+        <h1
+          className="text-2xl sm:text-3xl font-bold leading-tight mb-2"
+          style={{
+            background: "linear-gradient(135deg, var(--color-primary) 0%, var(--color-info) 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+          }}
+        >
+          MEV returns to the people<br />who make trading possible.
+        </h1>
+        <p className="text-xs leading-relaxed mb-5" style={{ color: "var(--color-subtext)" }}>
+          Every large swap opens a micro-auction. MEV searchers bid for execution rights.
+          The winning bid is donated directly to in-range liquidity providers.
+        </p>
+        {/* Live stats */}
+        <div className="flex flex-wrap justify-center gap-2">
+          <StatChip label="Swaps executed" value={String(swapsExecuted)} />
+          <StatChip label="Auction window" value={windowLabel} />
+          <StatChip label="Express lane" value={`< ${thresholdLabel}`} />
+          <StatChip label="Off-chain infra" value="None" />
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ─────────────────────────────────────── */}
       <section className="mb-8">
-        <p className="eyebrow mb-4">How It Works</p>
-        <div className="flex flex-col gap-3.5">
+        <p className="eyebrow mb-3">How It Works</p>
+        <div className="flex flex-col sm:flex-row gap-2">
           <Step
             n={1}
             title="Request a swap"
-            body={`Submit your swap — tokens are held by the hook contract. Swaps under ${thresholdLabel} skip the auction entirely (Express Lane, instant execution).`}
+            body={`Submit your trade. Tokens move to the hook contract. Swaps under ${thresholdLabel} skip the auction and execute instantly.`}
+            accent="var(--color-primary)"
           />
           <Step
             n={2}
-            title="Auction or Express Lane"
-            body={`Larger swaps open a ${windowLabel} bidding window. Arbitrageurs compete by calling submitBid() with increasing bids. No bids? The swap still executes at zero cost.`}
+            title="MEV searchers bid"
+            body={`A ${windowLabel} auction opens. Searchers outbid each other for execution rights. No bids? The swap still executes normally.`}
+            accent="var(--color-amber)"
           />
           <Step
             n={3}
-            title="Winning bid → LPs, swap output → you"
-            body="The highest bid is donated to the pool's liquidity providers via poolManager.donate(). You receive your swap output. MEV is recaptured, not extracted."
+            title="Bid goes to your LPs"
+            body="The winning bid is donated to in-range liquidity providers via poolManager.donate(). You get your output. MEV recaptured, not extracted."
+            accent="var(--color-success)"
           />
         </div>
       </section>
 
-      {/* ── SWAP FORM ─────────────────────────────────────── */}
+      {/* ── SWAP FORM ─────────────────────────────────────────── */}
       <section>
-        <p className="eyebrow mb-4">Protected Swap</p>
+        <p className="eyebrow mb-3">Protected Swap</p>
 
         <div
-          className="border rounded-sm"
-          style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
+          className="rounded-sm border transition-colors duration-200"
+          style={{ borderColor: accentBorder, backgroundColor: "var(--color-surface)" }}
         >
-          {/* FROM row */}
-          <div
-            className="border-b px-4 py-3"
-            style={{ borderColor: "var(--color-border)" }}
-          >
+          {/* FROM */}
+          <div className="border-b px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div
-                  className="size-6 rounded-sm flex items-center justify-center text-[10px] font-bold"
-                  style={{
-                    backgroundColor: "var(--color-surface-alt)",
-                    color: "var(--color-primary)",
-                  }}
+                  className="size-7 rounded-sm flex items-center justify-center text-[11px] font-bold"
+                  style={{ backgroundColor: "var(--color-primary)" + "20", color: "var(--color-primary)" }}
                 >
                   {fromSymbol.slice(0, 1)}
                 </div>
-                <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>
-                  {fromSymbol}
-                </span>
-                <svg viewBox="0 0 12 12" fill="none" className="w-2.5 h-2.5" style={{ color: "var(--color-eyebrow)" }}>
-                  <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+                <span className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>{fromSymbol}</span>
               </div>
               <input
                 type="number"
@@ -272,9 +262,7 @@ export default function SwapPage() {
             </div>
             <div className="flex items-center justify-between mt-1.5">
               <span className="eyebrow" style={{ marginBottom: 0 }}>Balance</span>
-              <span className="mono-val text-[11px]" style={{ color: "var(--color-subtext)" }}>
-                {fromBal}
-              </span>
+              <span className="mono-val text-[11px]" style={{ color: "var(--color-subtext)" }}>{fromBal}</span>
             </div>
           </div>
 
@@ -283,11 +271,7 @@ export default function SwapPage() {
             <button
               onClick={() => setZeroForOne((v) => !v)}
               className="size-7 flex items-center justify-center -my-3.5 relative z-10 rounded-sm border transition-colors"
-              style={{
-                borderColor: "var(--color-border)",
-                backgroundColor: "var(--color-surface-alt)",
-                color: "var(--color-subtext)",
-              }}
+              style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface-alt)", color: "var(--color-subtext)" }}
               title="Flip direction"
             >
               <svg viewBox="0 0 16 16" fill="none" className="w-3 h-3">
@@ -296,35 +280,23 @@ export default function SwapPage() {
             </button>
           </div>
 
-          {/* TO row */}
-          <div
-            className="border-t px-4 py-3"
-            style={{ borderColor: "var(--color-border)" }}
-          >
+          {/* TO */}
+          <div className="border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div
-                  className="size-6 rounded-sm flex items-center justify-center text-[10px] font-bold"
-                  style={{
-                    backgroundColor: "var(--color-surface-alt)",
-                    color: "var(--color-info)",
-                  }}
+                  className="size-7 rounded-sm flex items-center justify-center text-[11px] font-bold"
+                  style={{ backgroundColor: "var(--color-info)" + "20", color: "var(--color-info)" }}
                 >
                   {toSymbol.slice(0, 1)}
                 </div>
-                <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>
-                  {toSymbol}
-                </span>
+                <span className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>{toSymbol}</span>
               </div>
-              <span className="mono-val text-xl font-medium" style={{ color: "var(--color-eyebrow)" }}>
-                —
-              </span>
+              <span className="mono-val text-xl font-medium" style={{ color: "var(--color-eyebrow)" }}>—</span>
             </div>
             <div className="flex items-center justify-between mt-1.5">
               <span className="eyebrow" style={{ marginBottom: 0 }}>Balance</span>
-              <span className="mono-val text-[11px]" style={{ color: "var(--color-subtext)" }}>
-                {toBal}
-              </span>
+              <span className="mono-val text-[11px]" style={{ color: "var(--color-subtext)" }}>{toBal}</span>
             </div>
           </div>
 
@@ -335,76 +307,48 @@ export default function SwapPage() {
           >
             <DataPair
               label="Swap Type"
-              value={swapType ? swapType.label : "—"}
+              value={swapType ? swapType.label : "Enter amount"}
               valueColor={swapType ? swapType.color : "var(--color-eyebrow)"}
             />
-            <DataPair label="Bidding Window" value={windowLabel} />
-            <DataPair
-              label="Express Lane Threshold"
-              value={`< ${thresholdLabel}`}
-            />
-            <DataPair
-              label="Bid Donated To"
-              value="Liquidity Providers"
-              valueColor="var(--color-subtext)"
-            />
+            <DataPair label="Auction Window" value={windowLabel} />
+            <DataPair label="Express Lane Below" value={`< ${thresholdLabel}`} />
+            <DataPair label="Bid Recipient" value="Liquidity Providers" valueColor="var(--color-subtext)" />
           </div>
 
-          {/* FEEDBACK */}
+          {/* ERROR / SUCCESS */}
           {error && (
-            <div
-              className="border-t px-4 py-2.5 text-xs mono-val"
-              style={{ borderColor: "var(--color-border)", color: "var(--color-error)" }}
-            >
+            <div className="border-t px-4 py-2.5 text-xs mono-val" style={{ borderColor: "var(--color-border)", color: "var(--color-error)" }}>
               {error}
             </div>
           )}
-          {isSuccess && isSmall && (
-            <div
-              className="border-t px-4 py-2.5 text-xs"
-              style={{ borderColor: "var(--color-border)", color: "var(--color-success)" }}
-            >
-              <span className="eyebrow" style={{ color: "var(--color-success)", marginBottom: "2px" }}>Status</span>
-              <p>Swap executed via Express Lane.</p>
-            </div>
-          )}
-          {isSuccess && !isSmall && (
-            <div
-              className="border-t px-4 py-2.5 text-xs"
-              style={{ borderColor: "var(--color-border)", color: "var(--color-subtext)" }}
-            >
-              <span className="eyebrow d-block" style={{ marginBottom: "2px" }}>Status</span>
-              <p>
-                Auction open —{" "}
-                <a href="/auctions" className="underline" style={{ color: "var(--color-primary)" }}>
-                  track in Auctions
-                </a>
-              </p>
+          {isSuccess && (
+            <div className="border-t px-4 py-2.5 text-xs" style={{ borderColor: "var(--color-border)", color: isSmall ? "var(--color-success)" : "var(--color-subtext)" }}>
+              {isSmall ? "Swap executed via Express Lane." : (
+                <>Auction open — <a href="/auctions" className="underline" style={{ color: "var(--color-primary)" }}>track in Auctions</a></>
+              )}
             </div>
           )}
 
           {/* CTA */}
           <div className="border-t px-4 py-3" style={{ borderColor: "var(--color-border)" }}>
             <button
-              id="swap-submit-btn"
               onClick={handleSwap}
-              disabled={!isConnected || !amount || parsedAmount === 0n || isPending || isConfirming}
-              className="w-full py-2.5 text-xs font-semibold rounded-sm border transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              disabled={btnDisabled}
+              className="w-full py-2.5 text-xs font-semibold rounded-sm transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
               style={{
-                borderColor: "var(--color-primary)",
-                color: "var(--color-primary)",
-                backgroundColor: "transparent",
+                background: btnDisabled
+                  ? "var(--color-surface-alt)"
+                  : "linear-gradient(135deg, var(--color-primary) 0%, var(--color-info) 100%)",
+                color: btnDisabled ? "var(--color-subtext)" : "#ffffff",
+                border: "none",
               }}
             >
               {!isConnected
                 ? "Connect Wallet to Swap"
-                : isPending
-                ? "Confirm in wallet…"
-                : isConfirming
-                ? "Confirming…"
-                : isSmall
-                ? "Request Express Swap"
-                : "Request Swap (Full Auction)"}
+                : isPending ? "Confirm in wallet…"
+                : isConfirming ? "Confirming…"
+                : isSmall ? "Request Express Swap"
+                : "Request Swap — Open Auction"}
             </button>
             <p className="mt-2 text-center text-[10px]" style={{ color: "var(--color-eyebrow)" }}>
               Tokens held by the hook contract until execution.

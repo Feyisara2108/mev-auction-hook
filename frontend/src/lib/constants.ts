@@ -3,7 +3,7 @@
 
 export const HOOK_ADDRESS = (
   process.env.NEXT_PUBLIC_HOOK_ADDRESS ??
-  "0xd73e4A0D49c5144e475a4a8f91c051d5b0a00080"
+  "0xd73e4a0d49c5144e475a4a8f91c051d5b0a00080"
 ) as `0x${string}`;
 
 // Pool key — currency0 must be < currency1 (address-sorted)
@@ -22,7 +22,7 @@ export const POOL_KEY = {
   tickSpacing: Number(process.env.NEXT_PUBLIC_POOL_TICK_SPACING ?? "60"),
   hooks: (
     process.env.NEXT_PUBLIC_HOOK_ADDRESS ??
-    "0xd73e4A0D49c5144e475a4a8f91c051d5b0a00080"
+    "0xd73e4a0d49c5144e475a4a8f91c051d5b0a00080"
   ) as `0x${string}`,
 } as const;
 
