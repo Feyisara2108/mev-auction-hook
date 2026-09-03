@@ -2,17 +2,17 @@
 
 A Uniswap v4 hook that intercepts every large swap, runs a short on-chain auction for execution rights, and donates the winning bid directly to in-range liquidity providers.
 
-**MEV doesn't leave the pool. It stays inside as LP revenue.**
+**When searchers bid for execution rights, that value stays inside the pool as LP revenue instead of leaving it.**
 
 Live on Unichain Sepolia. Hook at `0xd73e4A0D49c5144e475A4a8F91C051D5B0a00080`.
 
 ## The problem
 
-Liquidity providers on Uniswap bear all the downside of informed flow. Arbitrageurs and MEV bots trade against stale prices, extract value from pools, and LPs absorb the loss as impermanent loss. The swap fee is supposed to compensate for this risk — but research shows it does not cover arbitrage losses across most major pools.
+Liquidity providers on Uniswap bear all the downside of informed flow. Arbitrageurs and MEV bots trade against stale prices, extract value from pools, and LPs absorb the loss as impermanent loss. The swap fee is supposed to compensate for this risk — but empirical data shows it does not cover arbitrage losses across most major pools (Milionis et al. 2022; Canidio and Fritsch 2024).
 
 The real problem is not the fee level. It is where the value goes. MEV bots extract it and take it out of the protocol entirely. LPs see nothing. Pools respond by widening spreads or raising fees, which punishes ordinary traders for damage they did not cause.
 
-A pool has one fee and no way to tell an arbitrageur from a retail trader. This hook creates one.
+A pool has one fee and no way to tell an arbitrageur from a retail trader. This hook creates a market for execution rights — MEV that would have been extracted is instead auctioned, with the proceeds staying in the pool.
 
 ## How it works
 
@@ -40,13 +40,13 @@ On-chain MEV recapture for LPs is a recognised goal. Several established designs
 | EigenLayer AVS hooks | Off-chain AVS operators | Yes |
 | **This** | **Direct on-chain calls to the hook** | **No** |
 
-Every prior design that achieves meaningful recapture relies on off-chain actors — relayers, solvers, or AVS operators — to coordinate the auction. This introduces infrastructure requirements, trust assumptions in the coordination layer, and deployment friction that prevents permissionless use.
+All major deployed MEV recapture systems listed above rely on off-chain actors — relayers, solvers, or AVS operators — to coordinate the auction. This introduces infrastructure requirements, trust assumptions in the coordination layer, and deployment friction that prevents permissionless use.
 
 This hook requires none of that. The entire auction — intent submission, bidding, winner determination, and swap execution — happens through direct on-chain calls to a single deployed contract. There is no keeper, no relayer, no off-chain component of any kind.
 
-## Evidence
+## Projected Impact
 
-Modelled against realistic pool parameters using `analysis/economics.py`. All assumptions are explicit in the script.
+Economic model with stated assumptions — not a backtest. All parameters are explicit and can be challenged. See `analysis/economics.py`.
 
 **At 75% searcher competition, 3-block auction window:**
 
@@ -56,7 +56,7 @@ Modelled against realistic pool parameters using `analysis/economics.py`. All as
 | Mid-size pool | $1M/day | $3,000/day | +$328/day | **+10.9%** | 0 bps |
 | High-volume pair (5 bps fee) | $10M/day | $5,000/day | +$7,500/day | **+150%** | 0 bps |
 
-**Key result:** Uninformed traders pay zero extra cost. Small swaps use the express lane and execute immediately. Large uninformed swaps also pay no extra — there is no additional fee on the swap, only on the MEV the swap generates. The auction charges the MEV value that would have been extracted anyway.
+**Key result:** Small swaps use the express lane and execute immediately — zero extra cost. Large swaps experience a ~3-second delay on Unichain while the auction window is open; the opportunity cost of potential price movement during that window is negligible but not precisely zero. There is no additional fee on the swap itself — only the MEV value that would have been extracted anyway is auctioned.
 
 **Sensitivity to searcher competition:**
 
@@ -83,11 +83,11 @@ The hook works even with low competition — any non-zero bid adds LP revenue th
 
 ## Honest limits
 
-The 3-block (~3 second) window is short by design for demo purposes. A production deployment would use a longer window to attract more competitive bidding, approaching the upper bound of the sensitivity table above.
+The 3-block (~3 second) window is short by design for demo purposes. A production deployment would use a longer window to give more searchers time to participate.
 
 The hook only captures value from swaps on this specific pool. It does not affect other venues.
 
-In the current demo environment, there are no independent MEV searchers. The demo uses the same wallet as both swapper and executor to show the full auction cycle. In a real deployment with real volume, searchers would monitor the chain for open auctions and compete to fill them.
+In the current demo environment, there are no independent MEV searchers. The demo uses the same wallet as both swapper and bidder to show the full auction cycle. A real deployment with meaningful volume creates the same incentive structure that drives searcher activity in every competitive MEV environment — the difference is that here the bidding happens on-chain, and the proceeds go to LPs rather than to miners or validators.
 
 Not audited. The demo pool uses mock tokens with an unguarded mint function. Do not use with real funds.
 
@@ -114,7 +114,7 @@ Explorer: [unichain-sepolia.blockscout.com](https://unichain-sepolia.blockscout.
 forge test -vv
 ```
 
-20 tests pass. Coverage includes: express lane execution, competitive bidding across multiple searchers, outbid refund withdrawal, direct swap bypass rejection, LP fee growth after donation (both currency directions), zero-bid execution, auction timing guards, replay protection, swap cancellation with full refund, and a 10-swap simulation of the full MEV recapture cycle.
+20 tests pass. Coverage includes: express lane execution, competitive bidding across multiple searchers, outbid refund withdrawal, direct swap bypass rejection, LP fee growth after donation (both currency directions), zero-bid execution, auction timing guards, replay protection, swap cancellation with full refund, and a 10-swap end-to-end cycle test verifying mechanics over multiple sequential auctions.
 
 ## Running the demo
 
