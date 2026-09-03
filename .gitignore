@@ -5,9 +5,6 @@ out/
 # Broadcast logs (all chains)
 broadcast/
 
-# Docs
-docs/
-
 # Dotenv files
 .env
 .env.*
@@ -20,6 +17,9 @@ node_modules/
 
 # Forge dependency libs (cloned locally; restored with forge install)
 lib/
+
+# Frontend build artifacts
+frontend/.next/
 
 # Un-ignore frontend source lib (ABI, constants, wagmi config)
 !frontend/src/lib/
