@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useAccount, useChainId, useConnect, useDisconnect } from "wagmi";
 import { unichainSepolia, anvil } from "wagmi/chains";
 
@@ -14,10 +15,16 @@ export function WalletButton() {
   const { disconnect } = useDisconnect();
   const chainId = useChainId();
 
+  // wagmi restores a previous connection on the client only, so rendering the
+  // connected view during SSR/first paint produces a hydration mismatch. Hold the
+  // disconnected view until after mount, then swap.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const chainLabel = CHAIN_LABELS[chainId] ?? `Chain ${chainId}`;
   const isWrongNetwork = isConnected && !CHAIN_LABELS[chainId];
 
-  if (isConnected && address) {
+  if (mounted && isConnected && address) {
     return (
       <div className="flex items-center gap-1.5">
         {/* Network pill */}

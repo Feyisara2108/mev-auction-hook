@@ -11,8 +11,9 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
-import { HOOK_ADDRESS, TOKEN0_SYMBOL, TOKEN1_SYMBOL } from "@/lib/constants";
+import { GOVERNED_MEV_AUCTION_HOOK_ABI as MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
+import { HOOK_ADDRESS, POOL_KEY, TOKEN0_SYMBOL, TOKEN1_SYMBOL } from "@/lib/constants";
+import { BPS_DENOMINATOR_BI, bpsToPercent } from "@/lib/governance";
 
 type RequestInfo = {
   sender: `0x${string}`;
@@ -49,10 +50,12 @@ function AuctionCard({
   requestId,
   info,
   currentBlock,
+  lpShareBps,
 }: {
   requestId: bigint;
   info: RequestInfo;
   currentBlock: bigint;
+  lpShareBps: bigint;
 }) {
   const { address } = useAccount();
   const queryClient = useQueryClient();
@@ -216,14 +219,23 @@ function AuctionCard({
         </div>
       </div>
 
-      {/* LP donation notice (executed with bid) */}
-      {info.isCompleted && info.highestBid > 0n && (
+      {/* Split notice */}
+      {info.highestBid > 0n && (
         <div
-          className="border-t px-4 py-2 text-[11px]"
+          className="border-t px-4 py-2.5 text-[11px] flex flex-wrap items-center gap-x-4 gap-y-1"
           style={{ borderColor: "var(--color-border)", color: "var(--color-subtext)" }}
         >
-          <span className="eyebrow" style={{ display: "inline", marginBottom: 0 }}>LP Donation: </span>
-          <span className="mono-val">{formatEther(info.highestBid)} {fromSymbol} donated to liquidity providers</span>
+          <span className="eyebrow" style={{ display: "inline", marginBottom: 0 }}>
+            {info.isCompleted ? "Split" : "Split if it settles now"}
+          </span>
+          <span className="mono-val" style={{ color: "var(--color-success)" }}>
+            {formatEther((info.highestBid * lpShareBps) / BPS_DENOMINATOR_BI)} {fromSymbol} → LPs
+          </span>
+          <span className="mono-val" style={{ color: "var(--color-info)" }}>
+            {formatEther(info.highestBid - (info.highestBid * lpShareBps) / BPS_DENOMINATOR_BI)}{" "}
+            {fromSymbol} → trader
+          </span>
+          <span style={{ color: "var(--color-eyebrow)" }}>({bpsToPercent(lpShareBps)} LP vote)</span>
         </div>
       )}
 
@@ -328,6 +340,18 @@ export default function AuctionsPage() {
     query: { refetchInterval: 4000 },
   });
 
+  const { data: govInfo } = useReadContract({
+    address: HOOK_ADDRESS,
+    abi: MEV_AUCTION_HOOK_ABI,
+    functionName: "getGovernanceInfo",
+    args: [POOL_KEY],
+    query: { refetchInterval: 12_000 },
+  });
+  const gov = govInfo as
+    | { effectiveLpShareBps: bigint; traderRebateBps: bigint; totalLiquidity: bigint; votingWeight: bigint }
+    | undefined;
+  const lpShareBps = gov?.effectiveLpShareBps ?? BPS_DENOMINATOR_BI;
+
   const nextId = nextIdRaw ?? 0n;
   const ids = Array.from({ length: Number(nextId) }, (_, i) => BigInt(i));
 
@@ -364,7 +388,20 @@ export default function AuctionsPage() {
       <div className="mb-6">
         <p className="eyebrow mb-1">Live Auctions</p>
         <p className="text-xs" style={{ color: "var(--color-subtext)" }}>
-          On-chain MEV recapture events — place bids to execute swaps and earn priority.
+          On-chain auctions for swap execution rights. Outbid the field to win; the
+          winning bid is split{" "}
+          <span className="mono-val" style={{ color: "var(--color-success)" }}>
+            {bpsToPercent(gov?.effectiveLpShareBps)}
+          </span>{" "}
+          to LPs /{" "}
+          <span className="mono-val" style={{ color: "var(--color-info)" }}>
+            {bpsToPercent(gov?.traderRebateBps)}
+          </span>{" "}
+          to the trader, per the pool&apos;s{" "}
+          <a href="/governance" className="underline" style={{ color: "var(--color-primary)" }}>
+            LP vote
+          </a>
+          .
         </p>
       </div>
 
@@ -443,6 +480,7 @@ export default function AuctionsPage() {
                 requestId={id}
                 info={info}
                 currentBlock={currentBlock}
+                lpShareBps={lpShareBps}
               />
             ) : null
           )}

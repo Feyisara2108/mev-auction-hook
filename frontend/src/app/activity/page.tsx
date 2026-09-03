@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatEther, zeroAddress } from "viem";
+import { formatEther } from "viem";
 import {
   useAccount,
   useBlockNumber,
@@ -11,8 +11,8 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
-import { HOOK_ADDRESS, TOKEN0_SYMBOL, TOKEN1_SYMBOL } from "@/lib/constants";
+import { GOVERNED_MEV_AUCTION_HOOK_ABI as MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
+import { HOOK_ADDRESS, POOL_KEY, TOKEN0_SYMBOL, TOKEN1_SYMBOL } from "@/lib/constants";
 
 type RequestInfo = {
   sender: `0x${string}`;
@@ -48,10 +48,11 @@ function BidStatus({ info, address }: { info: RequestInfo; address: `0x${string}
 function WithdrawButton({
   currencyAddress,
   amount,
+  symbol,
 }: {
-  requestId: bigint;
   currencyAddress: `0x${string}`;
   amount: bigint;
+  symbol: string;
 }) {
   const queryClient = useQueryClient();
   const { writeContractAsync, isPending } = useWriteContract();
@@ -64,8 +65,6 @@ function WithdrawButton({
 
   if (isSuccess)
     return <span className="text-xs" style={{ color: "var(--color-success)" }}>Withdrawn</span>;
-
-  const symbol = currencyAddress === zeroAddress ? TOKEN0_SYMBOL : TOKEN1_SYMBOL;
 
   async function handleWithdraw() {
     try {
@@ -120,13 +119,27 @@ export default function ActivityPage() {
     query: { refetchInterval: 5000 },
   });
 
-  const { data: ethRefund } = useReadContract({
-    address: HOOK_ADDRESS,
-    abi: MEV_AUCTION_HOOK_ABI,
-    functionName: "pendingRefunds",
-    args: address ? [address, zeroAddress] : undefined,
+  // Outbid funds are refundable in whichever currency the bid was placed in
+  // (currency0 for zeroForOne swaps, currency1 otherwise).
+  const { data: refundData } = useReadContracts({
+    contracts: [
+      {
+        address: HOOK_ADDRESS,
+        abi: MEV_AUCTION_HOOK_ABI,
+        functionName: "pendingRefunds" as const,
+        args: address ? [address, POOL_KEY.currency0] : undefined,
+      },
+      {
+        address: HOOK_ADDRESS,
+        abi: MEV_AUCTION_HOOK_ABI,
+        functionName: "pendingRefunds" as const,
+        args: address ? [address, POOL_KEY.currency1] : undefined,
+      },
+    ],
     query: { enabled: !!address, refetchInterval: 5000 },
   });
+  const refund0 = (refundData?.[0]?.result as bigint | undefined) ?? 0n;
+  const refund1 = (refundData?.[1]?.result as bigint | undefined) ?? 0n;
 
   if (!isConnected || !address) {
     return (
@@ -147,14 +160,23 @@ export default function ActivityPage() {
     .filter((a) => a.info?.sender.toLowerCase() === address.toLowerCase())
     .reverse();
 
-  const myBids = allInfos
+  // Auctions where this wallet is currently the leading bidder. (getRequestInfo
+  // only exposes the current high bid, so auctions where the wallet has since
+  // been outbid show up under Pending Refunds instead.)
+  const myLeadingBids = allInfos
     .filter(
       (a) =>
         a.info !== undefined &&
+        a.info.highestBid > 0n &&
         a.info.highestBidder.toLowerCase() === address.toLowerCase() &&
         a.info.sender.toLowerCase() !== address.toLowerCase()
     )
     .reverse();
+
+  const refunds = [
+    { currency: POOL_KEY.currency0, symbol: TOKEN0_SYMBOL, amount: refund0 },
+    { currency: POOL_KEY.currency1, symbol: TOKEN1_SYMBOL, amount: refund1 },
+  ].filter((r) => r.amount > 0n);
 
   // ─── Shared table styles ──────────────────────────────────────────────────
   const thStyle: React.CSSProperties = {
@@ -272,16 +294,47 @@ export default function ActivityPage() {
             </div>
           </section>
 
-          {/* ── My Bids ─────────────────────────────────────── */}
+          {/* ── Pending Refunds ─────────────────────────────── */}
+          {refunds.length > 0 && (
+            <section className="mb-8">
+              <p className="eyebrow mb-3">Pending Refunds</p>
+              <div
+                className="border rounded-sm"
+                style={{ borderColor: "var(--color-amber)", backgroundColor: "var(--color-surface)" }}
+              >
+                {refunds.map((r) => (
+                  <div
+                    key={r.currency}
+                    className="flex items-center justify-between px-4 py-3 border-b last:border-b-0"
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    <div>
+                      <p className="mono-val text-sm font-medium" style={{ color: "var(--color-amber)" }}>
+                        {formatEther(r.amount)} {r.symbol}
+                      </p>
+                      <p className="text-[11px]" style={{ color: "var(--color-subtext)" }}>
+                        Outbid funds — pull them back any time.
+                      </p>
+                    </div>
+                    <WithdrawButton currencyAddress={r.currency} amount={r.amount} symbol={r.symbol} />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ── My Leading Bids ─────────────────────────────── */}
           <section>
-            <p className="eyebrow mb-3">My Bids</p>
+            <p className="eyebrow mb-3">My Leading Bids</p>
             <div
               className="border rounded-sm overflow-hidden"
               style={{ borderColor: "var(--color-border)", backgroundColor: "var(--color-surface)" }}
             >
-              {myBids.length === 0 ? (
+              {myLeadingBids.length === 0 ? (
                 <div className="px-4 py-8 text-center">
-                  <p className="text-xs" style={{ color: "var(--color-subtext)" }}>No bids placed yet.</p>
+                  <p className="text-xs" style={{ color: "var(--color-subtext)" }}>
+                    You are not the leading bidder on any open auction.
+                  </p>
                   <a
                     href="/auctions"
                     className="mt-2 inline-block text-xs underline"
@@ -298,62 +351,40 @@ export default function ActivityPage() {
                         <th style={thFirstStyle}>Auction</th>
                         <th style={thStyle}>My Bid</th>
                         <th style={thStyle}>Status</th>
-                        <th style={thStyle}>Refund Available</th>
                         <th style={thStyle}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {myBids.map(({ id, info }) => {
+                      {myLeadingBids.map(({ id, info }) => {
                         if (!info) return null;
-                        const isNotWinner =
-                          info.highestBidder.toLowerCase() !== address.toLowerCase();
-                        const refund = isNotWinner && ethRefund ? ethRefund : 0n;
-                        const hasRefund = refund > 0n;
-                        const isWinner =
-                          info.highestBidder.toLowerCase() === address.toLowerCase();
-
+                        const bidSymbol = info.zeroForOne ? TOKEN0_SYMBOL : TOKEN1_SYMBOL;
                         return (
                           <tr key={id.toString()}>
                             <td style={tdFirstStyle}>
                               <span className="mono-val font-medium" style={{ color: "var(--color-subtext)" }}>
-                                #A-{id.toString().padStart(4, "0")}
+                                #{id.toString().padStart(4, "0")}
                               </span>
                             </td>
                             <td style={tdStyle}>
                               <span className="mono-val" style={{ color: "var(--color-text)" }}>
-                                {info.highestBid > 0n
-                                  ? `${formatEther(info.highestBid)} ${TOKEN0_SYMBOL}`
-                                  : "—"}
+                                {formatEther(info.highestBid)} {bidSymbol}
                               </span>
                             </td>
                             <td style={tdStyle}>
                               <BidStatus info={info} address={address} />
                             </td>
                             <td style={tdStyle}>
-                              {hasRefund ? (
-                                <span className="mono-val" style={{ color: "var(--color-amber)" }}>
-                                  {formatEther(refund)} {TOKEN0_SYMBOL}
-                                </span>
-                              ) : (
-                                <span style={{ color: "var(--color-eyebrow)" }}>—</span>
-                              )}
-                            </td>
-                            <td style={tdStyle}>
-                              {hasRefund ? (
-                                <WithdrawButton
-                                  requestId={id}
-                                  currencyAddress={zeroAddress}
-                                  amount={refund}
-                                />
-                              ) : isWinner && !info.isCompleted ? (
+                              {!info.isCompleted ? (
                                 <a
                                   href="/auctions"
                                   className="text-xs underline"
                                   style={{ color: "var(--color-primary)" }}
                                 >
-                                  Increase Bid
+                                  {info.auctionOpen ? "Track / raise" : "Execute →"}
                                 </a>
-                              ) : null}
+                              ) : (
+                                <span style={{ color: "var(--color-eyebrow)" }}>Won</span>
+                              )}
                             </td>
                           </tr>
                         );

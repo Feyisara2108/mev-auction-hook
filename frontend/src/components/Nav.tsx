@@ -9,6 +9,7 @@ const links = [
   { href: "/", label: "Home" },
   { href: "/swap", label: "Swap" },
   { href: "/auctions", label: "Auctions" },
+  { href: "/governance", label: "Governance" },
   { href: "/activity", label: "Activity" },
 ];
 
@@ -72,10 +73,21 @@ export function Nav() {
         {/* Wordmark */}
         <Link
           href="/"
-          className="shrink-0 mr-4 sm:mr-6 text-xs font-semibold tracking-widest uppercase"
-          style={{ color: "var(--color-subtext)" }}
+          className="group shrink-0 mr-4 sm:mr-6 flex items-center gap-2"
         >
-          MEV Shield
+          <span
+            className="inline-block h-4 w-4 rounded-[3px]"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--color-primary) 0%, var(--color-info) 100%)",
+            }}
+          />
+          <span
+            className="text-xs font-semibold tracking-wide"
+            style={{ color: "var(--color-text)" }}
+          >
+            Governed MEV Auction
+          </span>
         </Link>
 
         {/* Page tabs */}

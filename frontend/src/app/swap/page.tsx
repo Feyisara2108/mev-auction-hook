@@ -8,13 +8,14 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-import { MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
+import { GOVERNED_MEV_AUCTION_HOOK_ABI as MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
 import {
   HOOK_ADDRESS,
   POOL_KEY,
   TOKEN0_SYMBOL,
   TOKEN1_SYMBOL,
 } from "@/lib/constants";
+import { bpsToPercent } from "@/lib/governance";
 
 const ERC20_ABI = [
   {
@@ -84,6 +85,14 @@ export default function SwapPage() {
     functionName: "smallSwapThreshold",
   });
 
+  const { data: govInfo } = useReadContract({
+    address: HOOK_ADDRESS,
+    abi: MEV_AUCTION_HOOK_ABI,
+    functionName: "getGovernanceInfo",
+    args: [POOL_KEY],
+    query: { refetchInterval: 12_000 },
+  });
+
   const { data: bal0, refetch: refetchBal0 } = useReadContract({
     address: POOL_KEY.currency0,
     abi: ERC20_ABI,
@@ -140,6 +149,13 @@ export default function SwapPage() {
   const windowLabel = `${windowBlocks} blocks (~${windowBlocks}s)`;
   const thresholdLabel = `${(Number(thresholdWei) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${TOKEN0_SYMBOL}`;
 
+  const gov = govInfo as
+    | { effectiveLpShareBps: bigint; traderRebateBps: bigint; totalLiquidity: bigint; votingWeight: bigint }
+    | undefined;
+  const lpShareLabel = bpsToPercent(gov?.effectiveLpShareBps);
+  const rebateLabel = bpsToPercent(gov?.traderRebateBps);
+  const noVotesYet = gov !== undefined && gov.votingWeight === 0n;
+
   const swapType = parsedAmount > 0n
     ? isSmall
       ? { label: "Express Lane", color: "var(--color-success)" }
@@ -192,9 +208,10 @@ export default function SwapPage() {
     <div className="mx-auto max-w-sm px-4 py-10">
 
       <div className="mb-5">
-        <p className="eyebrow mb-1">Protected Swap</p>
+        <p className="eyebrow mb-1">Swap</p>
         <p className="text-xs" style={{ color: "var(--color-subtext)" }}>
-          Large swaps open an auction. Searcher bids go to your LPs.
+          Large swaps open an on-chain auction. The winning searcher bid is split
+          between this pool&apos;s LPs and you, in the ratio the LPs voted for.
         </p>
       </div>
 
@@ -277,8 +294,40 @@ export default function SwapPage() {
           />
           <DataPair label="Auction Window" value={windowLabel} />
           <DataPair label="Express Lane Below" value={`< ${thresholdLabel}`} />
-          <DataPair label="Bid Donated To" value="Liquidity Providers" valueColor="var(--color-subtext)" />
+          <DataPair
+            label="To LPs / To You"
+            value={gov ? `${lpShareLabel} / ${rebateLabel}` : "—"}
+            valueColor="var(--color-success)"
+          />
         </div>
+
+        {/* GOVERNED SPLIT DETAIL */}
+        {swapType && !isSmall && (
+          <div
+            className="border-t px-4 py-2.5 text-[11px]"
+            style={{ borderColor: "var(--color-border)", color: "var(--color-subtext)" }}
+          >
+            The winning bid on this swap will be split{" "}
+            <span className="mono-val" style={{ color: "var(--color-success)" }}>
+              {lpShareLabel}
+            </span>{" "}
+            donated to in-range LPs and{" "}
+            <span className="mono-val" style={{ color: "var(--color-info)" }}>
+              {rebateLabel}
+            </span>{" "}
+            rebated to you.
+            {noVotesYet && (
+              <>
+                {" "}
+                No LP has voted yet, so the pool default (100% to LPs) applies.
+              </>
+            )}{" "}
+            <a href="/governance" className="underline" style={{ color: "var(--color-primary)" }}>
+              LPs set this
+            </a>
+            .
+          </div>
+        )}
 
         {/* ERROR */}
         {error && (
@@ -332,7 +381,8 @@ export default function SwapPage() {
             </button>
           )}
           <p className="text-center text-[10px]" style={{ color: "var(--color-eyebrow)" }}>
-            Tokens held by the hook until execution. Searcher bids go to your LPs.
+            Tokens held by the hook until execution. The winning bid is split
+            between LPs and you per the pool vote.
           </p>
         </div>
       </div>
