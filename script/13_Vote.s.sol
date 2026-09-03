@@ -31,13 +31,8 @@ contract VoteScript is BaseScript {
 
         GovernedMevAuctionHook hook = GovernedMevAuctionHook(payable(address(hookContract)));
 
-        PoolKey memory poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: 3000,
-            tickSpacing: 60,
-            hooks: hookContract
-        });
+        PoolKey memory poolKey =
+            PoolKey({currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: hookContract});
 
         vm.startBroadcast();
         hook.vote(poolKey, lpShareBps);

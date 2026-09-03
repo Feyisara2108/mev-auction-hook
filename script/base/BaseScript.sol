@@ -27,22 +27,22 @@ contract BaseScript is Script, Deployers {
     Currency immutable currency1;
 
     constructor() {
-        token0       = IERC20(vm.envOr("TOKEN0_ADDRESS", address(0)));
-        token1       = IERC20(vm.envOr("TOKEN1_ADDRESS", address(0)));
-        hookContract = IHooks(vm.envOr("HOOK_ADDRESS",   address(0)));
+        token0 = IERC20(vm.envOr("TOKEN0_ADDRESS", address(0)));
+        token1 = IERC20(vm.envOr("TOKEN1_ADDRESS", address(0)));
+        hookContract = IHooks(vm.envOr("HOOK_ADDRESS", address(0)));
 
         deployArtifacts();
         deployerAddress = getDeployer();
 
         (currency0, currency1) = getCurrencies();
 
-        vm.label(address(permit2),         "Permit2");
-        vm.label(address(poolManager),     "V4PoolManager");
+        vm.label(address(permit2), "Permit2");
+        vm.label(address(poolManager), "V4PoolManager");
         vm.label(address(positionManager), "V4PositionManager");
-        vm.label(address(swapRouter),      "V4SwapRouter");
-        vm.label(address(token0),          "Currency0");
-        vm.label(address(token1),          "Currency1");
-        vm.label(address(hookContract),    "HookContract");
+        vm.label(address(swapRouter), "V4SwapRouter");
+        vm.label(address(token0), "Currency0");
+        vm.label(address(token1), "Currency1");
+        vm.label(address(hookContract), "HookContract");
     }
 
     function _etch(address target, bytes memory bytecode) internal override {

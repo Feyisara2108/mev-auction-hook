@@ -7,7 +7,7 @@ import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol
 import {console2} from "forge-std/Script.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
-import {MevAuctionHook} from "../src/MevAuctionHook.sol";
+import {GovernedMevAuctionHook} from "../src/GovernedMevAuctionHook.sol";
 
 /**
  * @notice Submits a swap intent to the MEV auction hook.
@@ -33,21 +33,13 @@ contract RequestSwapScript is BaseScript {
     function run() external {
         require(address(hookContract) != address(0), "Set HOOK_ADDRESS in .env");
 
-        MevAuctionHook hook = MevAuctionHook(payable(address(hookContract)));
+        GovernedMevAuctionHook hook = GovernedMevAuctionHook(payable(address(hookContract)));
 
-        PoolKey memory poolKey = PoolKey({
-            currency0:   currency0,
-            currency1:   currency1,
-            fee:         3000,
-            tickSpacing: 60,
-            hooks:       hookContract
-        });
+        PoolKey memory poolKey =
+            PoolKey({currency0: currency0, currency1: currency1, fee: 3000, tickSpacing: 60, hooks: hookContract});
 
-        SwapParams memory params = SwapParams({
-            zeroForOne:        true,
-            amountSpecified:   -int256(SWAP_AMOUNT),
-            sqrtPriceLimitX96: 0
-        });
+        SwapParams memory params =
+            SwapParams({zeroForOne: true, amountSpecified: -int256(SWAP_AMOUNT), sqrtPriceLimitX96: 0});
 
         vm.startBroadcast();
         token0.approve(address(hook), SWAP_AMOUNT);

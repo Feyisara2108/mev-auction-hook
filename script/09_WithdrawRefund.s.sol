@@ -5,7 +5,7 @@ import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol
 import {console2} from "forge-std/Script.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
-import {MevAuctionHook} from "../src/MevAuctionHook.sol";
+import {GovernedMevAuctionHook} from "../src/GovernedMevAuctionHook.sol";
 
 /**
  * @notice Withdraws a pending refund for an outbid MEV searcher.
@@ -28,7 +28,7 @@ contract WithdrawRefundScript is BaseScript {
     function run() external {
         require(address(hookContract) != address(0), "Set HOOK_ADDRESS in .env");
 
-        MevAuctionHook hook = MevAuctionHook(payable(address(hookContract)));
+        GovernedMevAuctionHook hook = GovernedMevAuctionHook(payable(address(hookContract)));
 
         // Check both currencies for pending refunds
         address c0 = Currency.unwrap(currency0);

@@ -5,7 +5,7 @@ import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol
 import {console2} from "forge-std/Script.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
-import {MevAuctionHook} from "../src/MevAuctionHook.sol";
+import {GovernedMevAuctionHook} from "../src/GovernedMevAuctionHook.sol";
 
 /**
  * @notice Places a bid on an open MEV auction.
@@ -32,11 +32,11 @@ contract SubmitBidScript is BaseScript {
         uint256 requestId = vm.envUint("REQUEST_ID");
         uint256 bidAmount = vm.envUint("BID_AMOUNT");
 
-        MevAuctionHook hook = MevAuctionHook(payable(address(hookContract)));
-        MevAuctionHook.RequestInfo memory info = hook.getRequestInfo(requestId);
+        GovernedMevAuctionHook hook = GovernedMevAuctionHook(payable(address(hookContract)));
+        GovernedMevAuctionHook.RequestInfo memory info = hook.getRequestInfo(requestId);
 
         require(!info.isCompleted, "Request already completed");
-        require(info.auctionOpen,  "Auction window has closed - run 08_ExecuteSwap");
+        require(info.auctionOpen, "Auction window has closed - run 08_ExecuteSwap");
 
         // Approve the bid currency (input currency for this swap direction)
         bool isZeroForOne = info.zeroForOne;

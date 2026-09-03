@@ -14,16 +14,30 @@ import {GovernedMevAuctionHook} from "../src/GovernedMevAuctionHook.sol";
  *
  * Usage:
  *   forge script script/12_DeployGovernedMevAuctionHook.s.sol \
- *     --rpc-url $RPC_URL \
+ *     --rpc-url $UNICHAIN_SEPOLIA_RPC_URL \
  *     --private-key $PRIVATE_KEY \
  *     --broadcast \
- *     --verify \
- *     --verifier-url https://api-sepolia.uniscan.xyz/api \
- *     --etherscan-api-key $UNISCAN_API_KEY \
  *     -vvv
  *
  *   Then copy the deployed hook address into HOOK_ADDRESS in .env (and the frontend .env.local)
  *   and run script/05_CreatePool.s.sol against it.
+ *
+ * Verification (separate step, works on an already-deployed address):
+ *   forge verify-contract <HOOK_ADDRESS> \
+ *     src/GovernedMevAuctionHook.sol:GovernedMevAuctionHook \
+ *     --chain 1301 \
+ *     --etherscan-api-key $UNISCAN_API_KEY \
+ *     --compiler-version 0.8.30 \
+ *     --constructor-args $(cast abi-encode 'constructor(address,uint256,uint256)' \
+ *         0x00B036B58a818B1BC34d502D3fE730Db729e62AC 1000000000000000000 3) \
+ *     --watch
+ *
+ *   Do NOT pass --verifier-url https://api-sepolia.uniscan.xyz/api — that is the retired
+ *   Etherscan V1 endpoint and now fails. Omitting it lets Foundry route through the
+ *   Etherscan V2 multichain API, which is what Uniscan runs on.
+ *
+ * NOTE: the optimizer must stay enabled (see foundry.toml). Unoptimized, this contract
+ *       compiles to ~27.9 KB and is rejected by EIP-170's 24,576-byte limit.
  */
 contract DeployGovernedMevAuctionHook is Script {
     // Standard CREATE2 deployer proxy — same address on all EVM chains
@@ -37,9 +51,8 @@ contract DeployGovernedMevAuctionHook is Script {
     uint256 constant AUCTION_WINDOW_BLOCKS = 3; // ~3 s on Unichain (1-second blocks)
 
     function run() external {
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-        );
+        uint160 flags =
+            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG);
 
         bytes memory constructorArgs = abi.encode(POOL_MANAGER, SMALL_SWAP_THRESHOLD, AUCTION_WINDOW_BLOCKS);
 

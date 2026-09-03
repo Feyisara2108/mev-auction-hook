@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 import {console2} from "forge-std/Script.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
-import {MevAuctionHook} from "../src/MevAuctionHook.sol";
+import {GovernedMevAuctionHook} from "../src/GovernedMevAuctionHook.sol";
 
 /**
  * @notice Executes a swap after the auction window has closed.
@@ -27,8 +27,8 @@ contract ExecuteSwapScript is BaseScript {
 
         uint256 requestId = vm.envUint("REQUEST_ID");
 
-        MevAuctionHook hook = MevAuctionHook(payable(address(hookContract)));
-        MevAuctionHook.RequestInfo memory info = hook.getRequestInfo(requestId);
+        GovernedMevAuctionHook hook = GovernedMevAuctionHook(payable(address(hookContract)));
+        GovernedMevAuctionHook.RequestInfo memory info = hook.getRequestInfo(requestId);
 
         require(!info.isCompleted, "Request already completed");
         require(!info.auctionOpen, "Auction window still open - wait for more blocks");

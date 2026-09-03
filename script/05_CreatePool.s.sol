@@ -14,7 +14,7 @@ import {LiquidityHelpers} from "./base/LiquidityHelpers.sol";
  * @notice Initialises a Uniswap v4 pool with the MEV auction hook and seeds full-range liquidity.
  *
  * Prerequisites:
- *   - Run script/04_DeployMevAuctionHook.s.sol and set HOOK_ADDRESS in .env
+ *   - Run script/12_DeployGovernedMevAuctionHook.s.sol and set HOOK_ADDRESS in .env
  *   - Set TOKEN0_ADDRESS and TOKEN1_ADDRESS in .env (TOKEN0 < TOKEN1 numerically)
  *
  * Usage:
@@ -27,22 +27,18 @@ import {LiquidityHelpers} from "./base/LiquidityHelpers.sol";
 contract CreatePoolScript is BaseScript, LiquidityHelpers {
     using CurrencyLibrary for Currency;
 
-    uint24  constant LP_FEE      = 3000;    // 0.30%
-    int24   constant TICK_SPACING = 60;
-    uint160 constant START_PRICE  = 2 ** 96; // 1:1 ratio
-    uint256 constant SEED         = 100e18;
+    uint24 constant LP_FEE = 3000; // 0.30%
+    int24 constant TICK_SPACING = 60;
+    uint160 constant START_PRICE = 2 ** 96; // 1:1 ratio
+    uint256 constant SEED = 100e18;
 
     function run() external {
         require(address(hookContract) != address(0), "Set HOOK_ADDRESS in .env");
-        require(address(token0)       != address(0), "Set TOKEN0_ADDRESS in .env");
-        require(address(token1)       != address(0), "Set TOKEN1_ADDRESS in .env");
+        require(address(token0) != address(0), "Set TOKEN0_ADDRESS in .env");
+        require(address(token1) != address(0), "Set TOKEN1_ADDRESS in .env");
 
         PoolKey memory poolKey = PoolKey({
-            currency0:   currency0,
-            currency1:   currency1,
-            fee:         LP_FEE,
-            tickSpacing: TICK_SPACING,
-            hooks:       hookContract
+            currency0: currency0, currency1: currency1, fee: LP_FEE, tickSpacing: TICK_SPACING, hooks: hookContract
         });
 
         _createAndSeed(poolKey);
@@ -57,15 +53,11 @@ contract CreatePoolScript is BaseScript, LiquidityHelpers {
 
     function _createAndSeed(PoolKey memory poolKey) internal {
         int24 currentTick = TickMath.getTickAtSqrtPrice(START_PRICE);
-        int24 tickLower   = truncateTickSpacing(currentTick - 750 * TICK_SPACING, TICK_SPACING);
-        int24 tickUpper   = truncateTickSpacing(currentTick + 750 * TICK_SPACING, TICK_SPACING);
+        int24 tickLower = truncateTickSpacing(currentTick - 750 * TICK_SPACING, TICK_SPACING);
+        int24 tickUpper = truncateTickSpacing(currentTick + 750 * TICK_SPACING, TICK_SPACING);
 
         uint128 liquidity = LiquidityAmounts.getLiquidityForAmounts(
-            START_PRICE,
-            TickMath.getSqrtPriceAtTick(tickLower),
-            TickMath.getSqrtPriceAtTick(tickUpper),
-            SEED,
-            SEED
+            START_PRICE, TickMath.getSqrtPriceAtTick(tickLower), TickMath.getSqrtPriceAtTick(tickUpper), SEED, SEED
         );
 
         (bytes memory actions, bytes[] memory mintParams) = _mintLiquidityParams(
@@ -73,9 +65,7 @@ contract CreatePoolScript is BaseScript, LiquidityHelpers {
         );
 
         bytes[] memory params = new bytes[](2);
-        params[0] = abi.encodeWithSelector(
-            positionManager.initializePool.selector, poolKey, START_PRICE, new bytes(0)
-        );
+        params[0] = abi.encodeWithSelector(positionManager.initializePool.selector, poolKey, START_PRICE, new bytes(0));
         params[1] = abi.encodeWithSelector(
             positionManager.modifyLiquidities.selector, abi.encode(actions, mintParams), block.timestamp + 3600
         );
