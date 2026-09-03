@@ -16,27 +16,17 @@ export const metadata: Metadata = {
     "A Uniswap v4 hook that auctions execution rights for large swaps on-chain and lets each pool's LPs vote, weighted by their liquidity, on how the winning bid is split between an LP donation and a trader rebate.",
 };
 
-// Runs before React hydrates — prevents theme flash on load
-const themeScript = `
-  try {
-    var saved = localStorage.getItem('mev-theme');
-    var preferred = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', saved || preferred);
-  } catch (e) {}
-`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    // suppressHydrationWarning: themeScript stamps data-theme on <html> before
-    // React hydrates, so the client attribute intentionally differs from the SSR output.
+    // suppressHydrationWarning: ThemeToggle stamps data-theme on <html> after
+    // mount when the viewer has an explicit saved choice, so that attribute can
+    // legitimately differ from the SSR output.
     <html
       lang="en"
       suppressHydrationWarning
       className={`${inter.variable} ${jetbrains.variable} h-full`}
     >
-      <head>
-        <script id="theme-init" dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body className="flex min-h-full flex-col bg-(--color-bg)">
         <Providers>
           <Nav />

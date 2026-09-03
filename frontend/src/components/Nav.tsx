@@ -17,18 +17,35 @@ function ThemeToggle() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
   useEffect(() => {
-    const saved = localStorage.getItem("mev-theme");
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem("mev-theme");
+    } catch {
+      /* storage blocked — fall back to the OS preference */
+    }
     const preferred = window.matchMedia("(prefers-color-scheme: light)").matches
       ? "light"
       : "dark";
-    setTheme((saved as "dark" | "light") || preferred);
+
+    // globals.css already follows prefers-color-scheme with no JS, so only an
+    // explicit saved choice needs to be stamped onto the document.
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+      setTheme(saved);
+    } else {
+      setTheme(preferred);
+    }
   }, []);
 
   function toggle() {
     const next = theme === "dark" ? "light" : "dark";
     setTheme(next);
     document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("mev-theme", next);
+    try {
+      localStorage.setItem("mev-theme", next);
+    } catch {
+      /* storage blocked — the choice just won't persist */
+    }
   }
 
   return (

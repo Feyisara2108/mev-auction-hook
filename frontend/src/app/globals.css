@@ -57,6 +57,30 @@
   color-scheme: light;
 }
 
+/* Follow the OS preference with no JavaScript at all, so the first paint is
+   already correct and no blocking inline script is needed. An explicit
+   data-theme="dark" from the toggle still wins over the system preference. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-bg:          #f8fafc;
+    --color-surface:     #ffffff;
+    --color-surface-alt: #f1f5f9;
+    --color-border:      #e2e8f0;
+    --color-border-hi:   #cbd5e1;
+    --color-text:        #0f172a;
+    --color-subtext:     #475569;
+    --color-muted:       #94a3b8;
+    --color-eyebrow:     #64748b;
+    --color-ticker:        #f1f5f9;
+    --color-ticker-border: #e2e8f0;
+    --color-success: #16a34a;
+    --color-amber:   #d97706;
+    --color-error:   #dc2626;
+    --color-info:    #0891b2;
+    color-scheme: light;
+  }
+}
+
 :root { color-scheme: dark; }
 
 * { box-sizing: border-box; }

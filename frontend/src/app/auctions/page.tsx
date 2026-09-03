@@ -14,6 +14,7 @@ import {
 import { GOVERNED_MEV_AUCTION_HOOK_ABI as MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
 import { HOOK_ADDRESS, POOL_KEY, TOKEN0_SYMBOL, TOKEN1_SYMBOL } from "@/lib/constants";
 import { BPS_DENOMINATOR_BI, bpsToPercent } from "@/lib/governance";
+import { useMounted } from "@/lib/useMounted";
 
 type RequestInfo = {
   sender: `0x${string}`;
@@ -58,6 +59,7 @@ function AuctionCard({
   lpShareBps: bigint;
 }) {
   const { address } = useAccount();
+  const mounted = useMounted();
   const queryClient = useQueryClient();
   const [bidInput, setBidInput] = useState("");
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>();
@@ -75,7 +77,7 @@ function AuctionCard({
   const toSymbol = info.zeroForOne ? TOKEN1_SYMBOL : TOKEN0_SYMBOL;
   const blocksLeft = info.deadlineBlock > currentBlock ? info.deadlineBlock - currentBlock : 0n;
   const isClosed = !info.auctionOpen && !info.isCompleted;
-  const isRequester = address?.toLowerCase() === info.sender.toLowerCase();
+  const isRequester = mounted && address?.toLowerCase() === info.sender.toLowerCase();
   const bidCurrencyIsNative = info.currency0 === zeroAddress;
 
   async function handleBid() {

@@ -13,6 +13,7 @@ import {
 } from "wagmi";
 import { GOVERNED_MEV_AUCTION_HOOK_ABI as MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
 import { HOOK_ADDRESS, POOL_KEY, TOKEN0_SYMBOL, TOKEN1_SYMBOL } from "@/lib/constants";
+import { useMounted } from "@/lib/useMounted";
 
 type RequestInfo = {
   sender: `0x${string}`;
@@ -96,6 +97,7 @@ function WithdrawButton({
 
 export default function ActivityPage() {
   const { address, isConnected } = useAccount();
+  const mounted = useMounted();
   const { data: blockNumber } = useBlockNumber({ watch: true });
   const currentBlock = blockNumber ?? 0n;
 
@@ -141,7 +143,7 @@ export default function ActivityPage() {
   const refund0 = (refundData?.[0]?.result as bigint | undefined) ?? 0n;
   const refund1 = (refundData?.[1]?.result as bigint | undefined) ?? 0n;
 
-  if (!isConnected || !address) {
+  if (!mounted || !isConnected || !address) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-20 text-center">
         <p className="text-xs" style={{ color: "var(--color-subtext)" }}>

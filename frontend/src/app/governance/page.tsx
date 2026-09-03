@@ -13,6 +13,7 @@ import {
 } from "wagmi";
 import { GOVERNED_MEV_AUCTION_HOOK_ABI } from "@/lib/abi";
 import { HOOK_ADDRESS, POOL_KEY } from "@/lib/constants";
+import { useMounted } from "@/lib/useMounted";
 import {
   attributionInnerHash,
   bpsToPercent,
@@ -86,6 +87,8 @@ const fmtWeight = (v: bigint | undefined) => {
 
 export default function GovernancePage() {
   const { address, isConnected } = useAccount();
+  const mounted = useMounted();
+  const walletReady = mounted && isConnected;
   const chainId = useChainId();
   const queryClient = useQueryClient();
   const poolId = useMemo(() => computePoolId(), []);
@@ -252,7 +255,7 @@ export default function GovernancePage() {
 
         {/* Your position */}
         <Card title="Your position">
-          {!isConnected ? (
+          {!walletReady ? (
             <p className="text-xs" style={{ color: "var(--color-subtext)" }}>
               Connect a wallet to see your voting weight.
             </p>
@@ -327,21 +330,21 @@ export default function GovernancePage() {
 
           <button
             onClick={handleVote}
-            disabled={!isConnected || isVotePending || isVoteConfirming}
+            disabled={!walletReady || isVotePending || isVoteConfirming}
             className="mt-3 w-full py-2.5 text-xs font-semibold rounded-sm transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               background:
-                !isConnected || isVotePending || isVoteConfirming
+                !walletReady || isVotePending || isVoteConfirming
                   ? "var(--color-surface-alt)"
                   : "linear-gradient(135deg, var(--color-primary) 0%, var(--color-info) 100%)",
               color:
-                !isConnected || isVotePending || isVoteConfirming
+                !walletReady || isVotePending || isVoteConfirming
                   ? "var(--color-subtext)"
                   : "#ffffff",
               border: "none",
             }}
           >
-            {!isConnected
+            {!walletReady
               ? "Connect wallet to vote"
               : isVotePending
                 ? "Confirm in wallet…"
@@ -372,7 +375,7 @@ export default function GovernancePage() {
 
           <button
             onClick={handleSign}
-            disabled={!isConnected || isSigning}
+            disabled={!walletReady || isSigning}
             className="mt-3 w-full py-2.5 text-xs font-semibold rounded-sm transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
             style={{
               background: "var(--color-surface-alt)",
@@ -380,7 +383,7 @@ export default function GovernancePage() {
               border: "1px solid var(--color-border)",
             }}
           >
-            {!isConnected
+            {!walletReady
               ? "Connect wallet to sign"
               : isSigning
                 ? "Sign in wallet…"

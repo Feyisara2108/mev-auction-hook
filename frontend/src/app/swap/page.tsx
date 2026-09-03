@@ -16,6 +16,7 @@ import {
   TOKEN1_SYMBOL,
 } from "@/lib/constants";
 import { bpsToPercent } from "@/lib/governance";
+import { useMounted } from "@/lib/useMounted";
 
 const ERC20_ABI = [
   {
@@ -62,6 +63,8 @@ function DataPair({ label, value, valueColor }: { label: string; value: string; 
 
 export default function SwapPage() {
   const { address, isConnected } = useAccount();
+  const mounted = useMounted();
+  const walletReady = mounted && isConnected;
   const [amount, setAmount] = useState("");
   const [zeroForOne, setZeroForOne] = useState(true);
   const [swapTxHash, setSwapTxHash] = useState<`0x${string}` | undefined>();
@@ -354,7 +357,7 @@ export default function SwapPage() {
 
         {/* CTA */}
         <div className="border-t px-4 py-3 flex flex-col gap-2" style={{ borderColor: "var(--color-border)" }}>
-          {!isConnected ? (
+          {!walletReady ? (
             <button disabled className="w-full py-2.5 text-xs font-semibold rounded-sm opacity-40 cursor-not-allowed"
               style={{ background: "var(--color-surface-alt)", color: "var(--color-subtext)", border: "none" }}>
               Connect Wallet to Swap
