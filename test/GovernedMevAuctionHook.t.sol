@@ -14,6 +14,7 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {Constants} from "@uniswap/v4-core/test/utils/Constants.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
 
 import {EasyPosm} from "./utils/libraries/EasyPosm.sol";
@@ -32,8 +33,10 @@ contract GovernedMevAuctionHookTest is BaseTest {
 
     address alice = makeAddr("alice"); // trader / swapper
     address bidder1 = makeAddr("bidder1");
-    address lp1 = makeAddr("lp1");
-    address lp2 = makeAddr("lp2");
+    address lp1;
+    uint256 lp1Key;
+    address lp2;
+    uint256 lp2Key;
 
     Currency currency0;
     Currency currency1;
@@ -45,13 +48,15 @@ contract GovernedMevAuctionHookTest is BaseTest {
     int24 tickUpper;
 
     function setUp() public {
+        (lp1, lp1Key) = makeAddrAndKey("lp1");
+        (lp2, lp2Key) = makeAddrAndKey("lp2");
+
         deployArtifactsAndLabel();
         (currency0, currency1) = deployCurrencyPair();
 
         address flags = address(
-            uint160(
-                Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
-            ) ^ (0x4444 << 144)
+            uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG)
+                ^ (0x4444 << 144)
         );
         bytes memory constructorArgs = abi.encode(poolManager, SMALL_SWAP_THRESHOLD, AUCTION_WINDOW);
         deployCodeTo("GovernedMevAuctionHook.sol:GovernedMevAuctionHook", constructorArgs, flags);
@@ -74,8 +79,20 @@ contract GovernedMevAuctionHookTest is BaseTest {
     // ─── Governance: weight tracking ──────────────────────────────────────────
 
     function test_afterAddLiquidity_tracksLpWeight() public {
-        _addLiquidity(50e18, abi.encode(lp1));
+        _addLiquidity(50e18, _attest(lp1Key, lp1));
         assertEq(hook.lpLiquidity(poolId, lp1), 50e18, "lp1 weight not tracked");
+    }
+
+    function test_addLiquidity_withoutAttestation_notTracked() public {
+        _addLiquidity(50e18, "");
+        assertEq(hook.lpLiquidity(poolId, lp1), 0, "unattested liquidity should carry no weight");
+        assertEq(hook.effectiveLpShareBps(poolId), BPS, "split should stay at default");
+    }
+
+    function test_addLiquidity_wrongSigner_notTracked() public {
+        // hookData claims lp1 but is signed by lp2's key.
+        _addLiquidity(50e18, abi.encode(lp1, _sign(lp2Key, lp1)));
+        assertEq(hook.lpLiquidity(poolId, lp1), 0, "forged attestation must not be honoured");
     }
 
     function test_defaultSplit_is100PercentToLps() public view {
@@ -83,7 +100,7 @@ contract GovernedMevAuctionHookTest is BaseTest {
     }
 
     function test_singleLpVote_setsSplit() public {
-        _addLiquidity(50e18, abi.encode(lp1));
+        _addLiquidity(50e18, _attest(lp1Key, lp1));
 
         vm.prank(lp1);
         hook.vote(poolKey, 6000);
@@ -92,8 +109,8 @@ contract GovernedMevAuctionHookTest is BaseTest {
     }
 
     function test_twoLps_liquidityWeightedAverage() public {
-        _addLiquidity(100e18, abi.encode(lp1));
-        _addLiquidity(300e18, abi.encode(lp2));
+        _addLiquidity(100e18, _attest(lp1Key, lp1));
+        _addLiquidity(300e18, _attest(lp2Key, lp2));
 
         vm.prank(lp1);
         hook.vote(poolKey, 8000);
@@ -105,8 +122,8 @@ contract GovernedMevAuctionHookTest is BaseTest {
     }
 
     function test_voteWeight_followsLiquidityChanges() public {
-        _addLiquidity(100e18, abi.encode(lp1));
-        _addLiquidity(100e18, abi.encode(lp2));
+        _addLiquidity(100e18, _attest(lp1Key, lp1));
+        _addLiquidity(100e18, _attest(lp2Key, lp2));
 
         vm.prank(lp1);
         hook.vote(poolKey, 8000);
@@ -116,19 +133,39 @@ contract GovernedMevAuctionHookTest is BaseTest {
         assertEq(hook.effectiveLpShareBps(poolId), 6000, "pre-change average wrong");
 
         // lp1 triples their liquidity; their vote should now dominate.
-        _addLiquidity(200e18, abi.encode(lp1));
+        _addLiquidity(200e18, _attest(lp1Key, lp1));
         // (300*8000 + 100*4000)/400 = 7000
         assertEq(hook.effectiveLpShareBps(poolId), 7000, "post-change average wrong");
     }
 
     function test_removeLiquidity_reducesWeight() public {
-        uint256 tokenId = _addLiquidity(100e18, abi.encode(lp1));
+        uint256 tokenId = _addLiquidity(100e18, _attest(lp1Key, lp1));
         assertEq(hook.lpLiquidity(poolId, lp1), 100e18);
 
-        positionManager.decreaseLiquidity(
-            tokenId, 40e18, 0, 0, address(this), block.timestamp, abi.encode(lp1)
-        );
+        // hookData is intentionally empty on removal — attribution comes from the position key.
+        positionManager.decreaseLiquidity(tokenId, 40e18, 0, 0, address(this), block.timestamp, "");
         assertEq(hook.lpLiquidity(poolId, lp1), 60e18, "weight not reduced on remove");
+    }
+
+    function test_removeLiquidity_ignoresHookData_noDesync() public {
+        _addLiquidity(100e18, _attest(lp1Key, lp1));
+        uint256 lp2TokenId = _addLiquidity(100e18, _attest(lp2Key, lp2));
+
+        vm.prank(lp1);
+        hook.vote(poolKey, 8000);
+        vm.prank(lp2);
+        hook.vote(poolKey, 2000);
+        assertEq(hook.effectiveLpShareBps(poolId), 5000, "pre-remove average wrong");
+
+        // lp2 exits their whole position but passes lp1's attestation as hookData.
+        positionManager.decreaseLiquidity(
+            lp2TokenId, 100e18, 0, 0, address(this), block.timestamp, abi.encode(lp1, _sign(lp1Key, lp1))
+        );
+
+        // Only lp2's weight is removed; lp1 is untouched and the split is now purely lp1's vote.
+        assertEq(hook.lpLiquidity(poolId, lp2), 0, "lp2 weight not removed");
+        assertEq(hook.lpLiquidity(poolId, lp1), 100e18, "lp1 weight wrongly changed");
+        assertEq(hook.effectiveLpShareBps(poolId), 8000, "vote sums desynced after remove");
     }
 
     function test_vote_rejectsInvalidShare() public {
@@ -141,7 +178,7 @@ contract GovernedMevAuctionHookTest is BaseTest {
 
     function test_governedSplit_donatesAndRebates() public {
         // lp1 provides liquidity and votes 60% to LPs / 40% rebate to trader.
-        _addLiquidity(100e18, abi.encode(lp1));
+        _addLiquidity(100e18, _attest(lp1Key, lp1));
         vm.prank(lp1);
         hook.vote(poolKey, 6000);
         assertEq(hook.effectiveLpShareBps(poolId), 6000);
@@ -152,8 +189,7 @@ contract GovernedMevAuctionHookTest is BaseTest {
         vm.startPrank(alice);
         MockERC20(Currency.unwrap(currency0)).approve(address(hook), swapAmount);
         uint256 requestId = hook.requestSwap(
-            poolKey,
-            SwapParams({zeroForOne: true, amountSpecified: -int256(swapAmount), sqrtPriceLimitX96: 0})
+            poolKey, SwapParams({zeroForOne: true, amountSpecified: -int256(swapAmount), sqrtPriceLimitX96: 0})
         );
         vm.stopPrank();
 
@@ -186,8 +222,7 @@ contract GovernedMevAuctionHookTest is BaseTest {
         vm.startPrank(alice);
         MockERC20(Currency.unwrap(currency0)).approve(address(hook), swapAmount);
         uint256 requestId = hook.requestSwap(
-            poolKey,
-            SwapParams({zeroForOne: true, amountSpecified: -int256(swapAmount), sqrtPriceLimitX96: 0})
+            poolKey, SwapParams({zeroForOne: true, amountSpecified: -int256(swapAmount), sqrtPriceLimitX96: 0})
         );
         vm.stopPrank();
 
@@ -210,7 +245,7 @@ contract GovernedMevAuctionHookTest is BaseTest {
     }
 
     function test_getGovernanceInfo_view() public {
-        _addLiquidity(100e18, abi.encode(lp1));
+        _addLiquidity(100e18, _attest(lp1Key, lp1));
         vm.prank(lp1);
         hook.vote(poolKey, 7000);
 
@@ -218,7 +253,8 @@ contract GovernedMevAuctionHookTest is BaseTest {
         assertEq(info.effectiveLpShareBps, 7000);
         assertEq(info.traderRebateBps, 3000);
         assertEq(info.votingWeight, 100e18);
-        assertEq(info.totalLiquidity, 200e18); // 100 baseline + 100 lp1
+        // Only attested liquidity is tracked; the unattested baseline in setUp does not count.
+        assertEq(info.totalLiquidity, 100e18);
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -238,8 +274,20 @@ contract GovernedMevAuctionHookTest is BaseTest {
         MockERC20(Currency.unwrap(currency1)).approve(address(permit2), type(uint256).max);
 
         (tokenId,) = positionManager.mint(
-            poolKey, tickLower, tickUpper, liquidity, amt0 + 2, amt1 + 2,
-            address(this), block.timestamp, hookData
+            poolKey, tickLower, tickUpper, liquidity, amt0 + 2, amt1 + 2, address(this), block.timestamp, hookData
         );
+    }
+
+    /// @dev A 65-byte attribution signature over the hook's digest for `lp`, signed by `signerKey`.
+    function _sign(uint256 signerKey, address lp) internal view returns (bytes memory) {
+        bytes32 digest =
+            MessageHashUtils.toEthSignedMessageHash(keccak256(abi.encode(block.chainid, address(hook), poolId, lp)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(signerKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev Well-formed `hookData` attributing liquidity to `lp`, signed by `lp` itself.
+    function _attest(uint256 lpKey, address lp) internal view returns (bytes memory) {
+        return abi.encode(lp, _sign(lpKey, lp));
     }
 }

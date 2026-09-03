@@ -2,9 +2,11 @@
 pragma solidity ^0.8.26;
 
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {console2} from "forge-std/Script.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
@@ -29,6 +31,7 @@ import {LiquidityHelpers} from "./base/LiquidityHelpers.sol";
  */
 contract AddLiquidityGovernedScript is BaseScript, LiquidityHelpers {
     using CurrencyLibrary for Currency;
+    using PoolIdLibrary for PoolKey;
 
     uint24 lpFee = 3000;
     int24 tickSpacing = 60;
@@ -44,15 +47,18 @@ contract AddLiquidityGovernedScript is BaseScript, LiquidityHelpers {
         require(address(hookContract) != address(0), "Set HOOK_ADDRESS in .env");
 
         PoolKey memory poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: lpFee,
-            tickSpacing: tickSpacing,
-            hooks: hookContract
+            currency0: currency0, currency1: currency1, fee: lpFee, tickSpacing: tickSpacing, hooks: hookContract
         });
 
-        // The key line: attribute liquidity + voting weight to the actual LP.
-        bytes memory hookData = abi.encode(deployerAddress);
+        // Attribute liquidity + voting weight to the actual LP. The hook verifies a one-time
+        // attestation signed by the LP: abi.encode(lp, signature). The digest binds chain id,
+        // hook address, pool id and the LP address (see GovernedMevAuctionHook.attributionDigest).
+        uint256 lpKey = vm.envUint("PRIVATE_KEY");
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(abi.encode(block.chainid, address(hookContract), poolKey.toId(), deployerAddress))
+        );
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(lpKey, digest);
+        bytes memory hookData = abi.encode(deployerAddress, abi.encodePacked(r, s, v));
 
         int24 currentTick = TickMath.getTickAtSqrtPrice(startingPrice);
         tickLower = truncateTickSpacing((currentTick - 750 * tickSpacing), tickSpacing);
@@ -77,9 +83,7 @@ contract AddLiquidityGovernedScript is BaseScript, LiquidityHelpers {
 
         vm.startBroadcast();
         tokenApprovals();
-        positionManager.modifyLiquidities{value: valueToPass}(
-            abi.encode(actions, mintParams), block.timestamp + 3600
-        );
+        positionManager.modifyLiquidities{value: valueToPass}(abi.encode(actions, mintParams), block.timestamp + 3600);
         vm.stopBroadcast();
 
         console2.log("=== Governed liquidity added ===");

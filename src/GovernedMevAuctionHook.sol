@@ -14,6 +14,8 @@ import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Minimal.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 /**
  * @title GovernedMevAuctionHook
@@ -33,6 +35,17 @@ import {IERC20Minimal} from "@uniswap/v4-core/src/interfaces/external/IERC20Mini
  *         where `weight_i` is the LP's currently-tracked liquidity in the pool. When no LP has
  *         voted, a sensible default split applies. This makes "LPs vote, weighted by their own
  *         liquidity, on the economics applied to their liquidity" a first-class, on-chain rule.
+ *
+ *         LP identity: v4 liquidity is added through the PositionManager singleton, so the
+ *         `afterAddLiquidity` callback never sees the real LP — only the PositionManager. To
+ *         attribute liquidity (and therefore voting weight) to the right address, the LP signs a
+ *         one-time attestation (see `attributionDigest`) and passes `abi.encode(lp, signature)` as
+ *         the `hookData` of their add-liquidity call. The hook verifies the signature (EOA or
+ *         ERC-1271) before crediting weight; liquidity added without a valid attestation simply
+ *         carries no governance weight. Attribution is then pinned to the position key, so removals
+ *         debit the same LP the add credited regardless of the `hookData` supplied at removal —
+ *         this closes the weight-desync vector. Known limitation: transferring the position NFT to
+ *         a new owner does not move the vote weight, because the hook cannot observe the transfer.
  */
 contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
     using BalanceDeltaLibrary for BalanceDelta;
@@ -67,7 +80,6 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
     mapping(address => mapping(address => uint256)) public pendingRefunds;
 
     bool private _swapInProgress;
-    uint256 private _currentRequestId;
 
     // ─── Governance storage ───────────────────────────────────────────────────
 
@@ -89,13 +101,19 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
     /// @notice Σ(weight_i) over LPs who have voted — denominator of the weighted average.
     mapping(PoolId => uint256) public votingWeight;
 
+    /// @notice LP a tracked position's weight is attributed to, keyed by position key.
+    ///         Set once, from a signed attestation, on the first tracked add for that position.
+    mapping(PoolId => mapping(bytes32 => address)) public positionAttribution;
+
+    /// @notice Liquidity the hook has tracked for a position key. May lag the pool's real position
+    ///         if liquidity was ever added to it without a valid attestation.
+    mapping(PoolId => mapping(bytes32 => uint256)) public positionTrackedLiquidity;
+
     // ─── Events ───────────────────────────────────────────────────────────────
 
     event SwapRequested(uint256 indexed requestId, address indexed sender, uint256 inputAmount, uint256 deadlineBlock);
     event BidSubmitted(uint256 indexed requestId, address indexed bidder, uint256 bidAmount);
-    event SwapExecuted(
-        uint256 indexed requestId, address indexed executor, uint256 lpDonation, uint256 traderRebate
-    );
+    event SwapExecuted(uint256 indexed requestId, address indexed executor, uint256 lpDonation, uint256 traderRebate);
     event SwapCancelled(uint256 indexed requestId, address indexed sender, uint256 refundedAmount);
 
     event LiquidityTracked(PoolId indexed poolId, address indexed lp, uint256 newLpLiquidity, uint256 totalLiquidity);
@@ -165,6 +183,61 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
         uint256 w = votingWeight[poolId];
         if (w == 0) return DEFAULT_LP_SHARE_BPS;
         return weightedVoteSum[poolId] / w;
+    }
+
+    // ─── Governance: LP attribution ───────────────────────────────────────────
+
+    /**
+     * @notice The 32-byte digest an LP signs once to attribute their liquidity (and the governance
+     *         voting weight it carries) in `key` to `lp`.
+     * @param key  The pool the LP provides liquidity to.
+     * @param lp   The address that should own the voting weight (usually the signer / EOA, but an
+     *             ERC-1271 contract wallet works too).
+     *
+     * The digest binds `block.chainid`, this hook's address, the pool id and `lp`, so a signature
+     * cannot be replayed against another pool, hook or chain. It is deliberately not bound to an
+     * amount, nonce, deadline or specific position: one signature authorises all of that LP's
+     * liquidity in the pool, so a frontend can capture it once and attach it to every add call
+     * (and subsequent adds to an already-attributed position need no `hookData` at all).
+     *
+     * The only consequence of the loose binding is that a third party could attach a *published*
+     * attestation to their own deposit and thereby credit `lp` with voting weight backed by
+     * someone else's capital. That grants no capability the third party does not already have by
+     * depositing and voting themselves, and the weight unwinds when that deposit is withdrawn.
+     *
+     * The signature is passed as `abi.encode(lp, signature)` in the `hookData` argument of the
+     * add-liquidity call.
+     */
+    function attributionDigest(PoolKey calldata key, address lp) public view returns (bytes32) {
+        return _attributionDigest(key.toId(), lp);
+    }
+
+    function _attributionDigest(PoolId poolId, address lp) internal view returns (bytes32) {
+        return MessageHashUtils.toEthSignedMessageHash(keccak256(abi.encode(block.chainid, address(this), poolId, lp)));
+    }
+
+    /// @dev External so `_recoverAttributedLp` can `try` it — a malformed `hookData` then yields
+    ///      "no attribution" instead of reverting the whole liquidity operation.
+    function decodeAttribution(bytes calldata hookData) external pure returns (address lp, bytes memory signature) {
+        (lp, signature) = abi.decode(hookData, (address, bytes));
+    }
+
+    /// @dev Returns the attested LP encoded in `hookData`, or `address(0)` if absent/invalid.
+    function _recoverAttributedLp(PoolId poolId, bytes calldata hookData) internal view returns (address) {
+        if (hookData.length < 96) return address(0);
+        try this.decodeAttribution(hookData) returns (address lp, bytes memory signature) {
+            if (lp == address(0) || signature.length == 0) return address(0);
+            if (SignatureChecker.isValidSignatureNow(lp, _attributionDigest(poolId, lp), signature)) {
+                return lp;
+            }
+            return address(0);
+        } catch {
+            return address(0);
+        }
+    }
+
+    function _positionKey(address owner, ModifyLiquidityParams calldata params) internal pure returns (bytes32) {
+        return keccak256(abi.encode(owner, params.tickLower, params.tickUpper, params.salt));
     }
 
     // ─── Auction functions ────────────────────────────────────────────────────
@@ -294,16 +367,14 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
     // ─── IUnlockCallback ──────────────────────────────────────────────────────
 
     function unlockCallback(bytes calldata data) external onlyPoolManager returns (bytes memory) {
-        uint256 requestId = abi.decode(data, (uint256));
+        (uint256 requestId, address executor) = abi.decode(data, (uint256, address));
         SwapRequest storage request = swapRequests[requestId];
 
         _swapInProgress = true;
-        _currentRequestId = requestId;
 
         BalanceDelta swapDelta = poolManager.swap(request.key, request.params, "");
 
         _swapInProgress = false;
-        _currentRequestId = 0;
 
         int128 delta0 = swapDelta.amount0();
         int128 delta1 = swapDelta.amount1();
@@ -345,9 +416,7 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
             }
         }
 
-        // Emitted from the caller (executeSwap / requestSwap) for a stable event surface.
-        _lastLpDonation = lpShare;
-        _lastTraderRebate = rebate;
+        emit SwapExecuted(requestId, executor, lpShare, rebate);
 
         return "";
     }
@@ -386,10 +455,11 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
     }
 
     /**
-     * @dev Track an LP's liquidity (their voting weight). Because liquidity in v4 is usually
-     *      added through the PositionManager singleton, `sender` is not the real LP. The real
-     *      LP address is passed in `hookData` (abi.encode(address)); if absent we fall back to
-     *      `sender`.
+     * @dev Track an LP's liquidity (their voting weight). Because liquidity in v4 is added through
+     *      the PositionManager singleton, `sender` is not the real LP — the LP is recovered from a
+     *      signed attestation in `hookData` (`abi.encode(lp, signature)`) the first time a position
+     *      is tracked, and pinned to that position's key. Liquidity added with no valid attestation
+     *      carries no governance weight.
      */
     function _afterAddLiquidity(
         address sender,
@@ -400,33 +470,55 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
         bytes calldata hookData
     ) internal override returns (bytes4, BalanceDelta) {
         if (params.liquidityDelta > 0) {
-            _addWeight(key.toId(), _resolveLp(sender, hookData), uint256(params.liquidityDelta));
+            PoolId poolId = key.toId();
+            bytes32 positionKey = _positionKey(sender, params);
+
+            address lp = positionAttribution[poolId][positionKey];
+            if (lp == address(0)) {
+                lp = _recoverAttributedLp(poolId, hookData);
+                if (lp != address(0)) positionAttribution[poolId][positionKey] = lp;
+            }
+
+            if (lp != address(0)) {
+                uint256 amount = uint256(params.liquidityDelta);
+                positionTrackedLiquidity[poolId][positionKey] += amount;
+                _addWeight(poolId, lp, amount);
+            }
         }
         return (BaseHook.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
+    /**
+     * @dev Debits the LP the matching add credited, looked up by position key. `hookData` is not
+     *      consulted here, so a removal cannot mis-attribute weight or desync the vote sums.
+     */
     function _afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
         ModifyLiquidityParams calldata params,
         BalanceDelta,
         BalanceDelta,
-        bytes calldata hookData
+        bytes calldata
     ) internal override returns (bytes4, BalanceDelta) {
         if (params.liquidityDelta < 0) {
-            _removeWeight(key.toId(), _resolveLp(sender, hookData), uint256(-params.liquidityDelta));
+            PoolId poolId = key.toId();
+            bytes32 positionKey = _positionKey(sender, params);
+            address lp = positionAttribution[poolId][positionKey];
+
+            if (lp != address(0)) {
+                uint256 amount = uint256(-params.liquidityDelta);
+                uint256 tracked = positionTrackedLiquidity[poolId][positionKey];
+                if (amount > tracked) amount = tracked;
+                if (amount > 0) {
+                    positionTrackedLiquidity[poolId][positionKey] = tracked - amount;
+                    _removeWeight(poolId, lp, amount);
+                }
+            }
         }
         return (BaseHook.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
     // ─── Internal helpers ─────────────────────────────────────────────────────
-
-    function _resolveLp(address sender, bytes calldata hookData) internal pure returns (address) {
-        if (hookData.length >= 32) {
-            return abi.decode(hookData, (address));
-        }
-        return sender;
-    }
 
     /// @dev Increase an LP's weight, keeping the weighted-vote sums consistent.
     function _addWeight(PoolId poolId, address lp, uint256 amount) internal {
@@ -454,16 +546,9 @@ contract GovernedMevAuctionHook is BaseHook, IUnlockCallback {
         emit LiquidityTracked(poolId, lp, lpLiquidity[poolId][lp], totalLiquidity[poolId]);
     }
 
-    // Scratch storage so executeSwap/requestSwap can emit the realised split after unlock.
-    uint256 private _lastLpDonation;
-    uint256 private _lastTraderRebate;
-
     function _doExecuteSwap(uint256 requestId) internal {
         swapRequests[requestId].isCompleted = true;
-        poolManager.unlock(abi.encode(requestId));
-        emit SwapExecuted(requestId, msg.sender, _lastLpDonation, _lastTraderRebate);
-        _lastLpDonation = 0;
-        _lastTraderRebate = 0;
+        poolManager.unlock(abi.encode(requestId, msg.sender));
     }
 
     function _settle(Currency currency, uint256 amount) internal {
