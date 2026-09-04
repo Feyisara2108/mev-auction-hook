@@ -213,7 +213,7 @@ forge script script/08_ExecuteSwap.s.sol \
   --rpc-url $UNICHAIN_SEPOLIA_RPC_URL --private-key $PRIVATE_KEY --broadcast -vvv
 
 # 5. Or use the frontend
-cd frontend && npm install && npm run letdev
+cd frontend && npm install && npm run dev
 ```
 
 ## Configuration
